@@ -19,6 +19,7 @@ from urllib.request import Request, urlopen
 from urllib.error import URLError
 
 RSC_URL = "https://artificialanalysis.ai/leaderboards/providers?_rsc=hgvan"
+MODELS_RSC_URL = "https://artificialanalysis.ai/leaderboards/models?_rsc=hgvan"
 RSC_HEADERS = {
     "accept": "*/*",
     "rsc": "1",
@@ -29,10 +30,10 @@ RSC_HEADERS = {
 }
 
 
-def fetch_rsc(timeout=60):
-    """Download the RSC stream from artificialanalysis.ai."""
-    print(f"Downloading RSC data from {RSC_URL} ...")
-    req = Request(RSC_URL, headers=RSC_HEADERS)
+def fetch_rsc(url=RSC_URL, timeout=60):
+    """Download an RSC stream from artificialanalysis.ai."""
+    print(f"Downloading RSC data from {url} ...")
+    req = Request(url, headers=RSC_HEADERS)
     try:
         with urlopen(req, timeout=timeout) as resp:
             if resp.status != 200:
@@ -94,6 +95,37 @@ def extract_rows(raw):
         return None
 
 
+def extract_model_indexes(raw):
+    """Extract per-model index scores from the models leaderboard stream.
+
+    The provider leaderboard does not publish the Coding Index or the
+    Agentic Index. The models leaderboard does. This function finds all
+    "models" JSON arrays in the stream. It returns a dict that maps a
+    model slug to its index scores. It keeps only numeric values.
+    """
+    text = raw.decode("utf-8", errors="replace")
+    indexes = {}
+    decoder = json.JSONDecoder()
+    pos = 0
+    while True:
+        idx = text.find('"models":[', pos)
+        if idx < 0:
+            break
+        pos = idx + 10
+        try:
+            models, _ = decoder.raw_decode(text, text.find('[', idx))
+        except json.JSONDecodeError:
+            continue
+        for m in models:
+            if not isinstance(m, dict) or not m.get("slug"):
+                continue
+            entry = indexes.setdefault(m["slug"], {})
+            for key in ("codingIndex", "agenticIndex"):
+                if isinstance(m.get(key), (int, float)):
+                    entry[key] = m[key]
+    return indexes
+
+
 def deduplicate_models(entries):
     """Keep one entry per model.
 
@@ -143,12 +175,16 @@ def deduplicate_models(entries):
     return result
 
 
-def clean_model(entry):
+def clean_model(entry, indexes=None):
     """Extract clean model data from a raw entry.
 
-    The site does not publish coding_index and math_index anymore.
-    We keep the keys so older dashboards do not break. Their value
-    is now always None.
+    `indexes` maps a model slug to scores from the models leaderboard
+    (see extract_model_indexes). The provider data alone does not
+    contain the Coding Index.
+
+    The site does not publish a Math Index anymore. As a stand-in,
+    math_index holds the AIME 2025 math contest score (0-100). It is
+    None for models that Artificial Analysis did not test on AIME.
     """
     model = dict_or_empty(entry.get("model"))
     perf = dict_or_empty(entry.get("performance"))
@@ -162,6 +198,8 @@ def clean_model(entry):
     blended = (3 * in_price + out_price) / 4 if in_price is not None and out_price is not None else None
     ttft_s = value_or_none(perf.get("medianTimeToFirstTokenSeconds"))
     e2e_s = value_or_none(perf.get("medianEndToEndResponseTimeSeconds"))
+    model_indexes = (indexes or {}).get(model.get("slug"), {})
+    aime25 = value_or_none(model.get("aime25"))
 
     return {
         "name": entry.get("label", "?"),
@@ -169,9 +207,9 @@ def clean_model(entry):
         "provider": host.get("name", "?"),
         "slug": model.get("slug", ""),
         "intelligence_index": value_or_none(model.get("intelligenceIndex")),
-        "coding_index": None,
-        "math_index": None,
-        "agentic_index": None,
+        "coding_index": model_indexes.get("codingIndex"),
+        "math_index": aime25 * 100 if aime25 is not None else None,
+        "agentic_index": model_indexes.get("agenticIndex"),
         "cost_per_task": value_or_none(pricing.get("costPerTask")),
         "price_1m_input_tokens": in_price,
         "price_1m_output_tokens": out_price,
@@ -206,6 +244,7 @@ def compress_for_calculator(models):
 def main():
     parser = argparse.ArgumentParser(description="Fetch AI model data from artificialanalysis.ai")
     parser.add_argument("--file", help="Parse existing RSC dump file (skip download)")
+    parser.add_argument("--models-file", help="Parse existing models leaderboard dump file (skip download)")
     parser.add_argument("--out", default="models.json", help="Output JSON file (default: models.json)")
     parser.add_argument("--minimal", action="store_true", help="Output only calculator-essential fields")
     parser.add_argument("--pretty", action="store_true", help="Pretty-print JSON output")
@@ -234,8 +273,19 @@ def main():
     deduped = deduplicate_models(entries)
     print(f"Deduplicated to {len(deduped)} unique models")
 
-    # Step 4: Clean
-    models = [clean_model(e) for e in deduped]
+    # Step 4: Get Coding and Agentic Index scores from the models leaderboard.
+    # The parser can work without them. The fields are then None.
+    if args.models_file:
+        with open(args.models_file, "rb") as f:
+            models_raw = f.read()
+        print(f"Read {len(models_raw):,} bytes from {args.models_file}")
+    else:
+        models_raw = fetch_rsc(MODELS_RSC_URL)
+    indexes = extract_model_indexes(models_raw) if models_raw else {}
+    print(f"Index scores for {len(indexes)} models from the models leaderboard")
+
+    # Step 5: Clean
+    models = [clean_model(e, indexes) for e in deduped]
 
     # Remove entries without pricing
     models_with_price = [m for m in models if m["price_1m_input_tokens"] and m["price_1m_output_tokens"]]
@@ -244,7 +294,7 @@ def main():
     # Sort by intelligence index descending
     models_with_price.sort(key=lambda m: m["intelligence_index"] or 0, reverse=True)
 
-    # Step 5: Output
+    # Step 6: Output
     if args.minimal:
         output = compress_for_calculator(models_with_price)
     else:

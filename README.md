@@ -77,8 +77,8 @@ Each entry:
 | `provider` | The API host that the numbers come from |
 | `slug` | URL-friendly identifier |
 | `intelligence_index` | AA Intelligence Index score |
-| `coding_index` | Always `null` — the site removed this metric |
-| `math_index` | Always `null` — the site removed this metric |
+| `coding_index` | AA Coding Index, joined from the models leaderboard |
+| `math_index` | AIME 2025 math contest score (0–100). The site removed its Math Index, so this is the stand-in |
 | `cost_per_task` | Cost to run one task of the AA Intelligence Index suite (USD) |
 | `price_1m_input_tokens` | Input price per 1M tokens (USD) |
 | `price_1m_output_tokens` | Output price per 1M tokens (USD) |
