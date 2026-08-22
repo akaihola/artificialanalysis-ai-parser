@@ -19,6 +19,7 @@ from urllib.request import Request, urlopen
 from urllib.error import URLError
 
 RSC_URL = "https://artificialanalysis.ai/leaderboards/providers?_rsc=hgvan"
+MODELS_RSC_URL = "https://artificialanalysis.ai/leaderboards/models?_rsc=hgvan"
 RSC_HEADERS = {
     "accept": "*/*",
     "rsc": "1",
@@ -29,10 +30,10 @@ RSC_HEADERS = {
 }
 
 
-def fetch_rsc(timeout=60):
-    """Download the RSC stream from artificialanalysis.ai."""
-    print(f"Downloading RSC data from {RSC_URL} ...")
-    req = Request(RSC_URL, headers=RSC_HEADERS)
+def fetch_rsc(url=RSC_URL, timeout=60):
+    """Download an RSC stream from artificialanalysis.ai."""
+    print(f"Downloading RSC data from {url} ...")
+    req = Request(url, headers=RSC_HEADERS)
     try:
         with urlopen(req, timeout=timeout) as resp:
             if resp.status != 200:
@@ -46,111 +47,204 @@ def fetch_rsc(timeout=60):
         return None
 
 
-def extract_hosts_models(raw):
-    """Extract the 'hostsModels' JSON array from the RSC stream."""
-    idx = raw.find(b'"hostsModels"')
+def value_or_none(v):
+    """Return None for RSC placeholder strings such as "$undefined".
+
+    The RSC stream marks missing values with strings like "$undefined".
+    This helper turns them into None. Real values pass through unchanged.
+    """
+    if isinstance(v, str) and v.startswith("$"):
+        return None
+    return v
+
+
+def dict_or_empty(v):
+    """Return v if it is a dict. Return an empty dict if it is not.
+
+    Some entries hold a reference string (for example "$c:props:...")
+    instead of a real object. This helper makes access safe.
+    """
+    return v if isinstance(v, dict) else {}
+
+
+def extract_rows(raw):
+    """Extract the leaderboard "rows" JSON array from the RSC stream.
+
+    The RSC stream is text. It contains a large React tree. The tree has
+    a "rows" key. Its value is a JSON array with one entry per host-model
+    pair. We decode the JSON directly from that position. The JSON decoder
+    finds the end of the array by itself, so brackets inside strings are
+    not a problem.
+    """
+    text = raw.decode("utf-8", errors="replace")
+    idx = text.find('"rows":')
     if idx < 0:
-        print("Error: 'hostsModels' not found in response")
+        print("Error: 'rows' not found in response")
         return None
 
-    arr_start = raw.find(b'[', idx)
-    if arr_start < 0 or arr_start - idx > 500:
-        print("Error: could not find array start after 'hostsModels'")
+    arr_start = text.find('[', idx)
+    if arr_start < 0 or arr_start - idx > 50:
+        print("Error: could not find array start after 'rows'")
         return None
 
-    # Bracket-counting to find the matching close bracket
-    depth = 1
-    pos = arr_start + 1
-    while depth > 0 and pos < len(raw):
-        b = raw[pos]
-        if b == 0x5B:     # [
-            depth += 1
-        elif b == 0x5D:   # ]
-            depth -= 1
-        if depth > 0:
-            pos += 1
-
-    json_bytes = raw[arr_start:pos + 1]
     try:
-        return json.loads(json_bytes)
+        rows, _ = json.JSONDecoder().raw_decode(text, arr_start)
+        return rows
     except json.JSONDecodeError as e:
-        print(f"JSON parse error at byte {e.pos}: {e.msg}")
+        print(f"JSON parse error at position {e.pos}: {e.msg}")
         return None
+
+
+def extract_model_indexes(raw):
+    """Extract per-model index scores from the models leaderboard stream.
+
+    The provider leaderboard does not publish the Coding Index or the
+    Agentic Index. The models leaderboard does. This function finds all
+    "models" JSON arrays in the stream. It returns a dict that maps a
+    model slug to its index scores. It keeps only numeric values.
+    """
+    text = raw.decode("utf-8", errors="replace")
+    indexes = {}
+    decoder = json.JSONDecoder()
+    pos = 0
+    while True:
+        idx = text.find('"models":[', pos)
+        if idx < 0:
+            break
+        pos = idx + 10
+        try:
+            models, _ = decoder.raw_decode(text, text.find('[', idx))
+        except json.JSONDecodeError:
+            continue
+        for m in models:
+            if not isinstance(m, dict) or not m.get("slug"):
+                continue
+            entry = indexes.setdefault(m["slug"], {})
+            for key in ("codingIndex", "agenticIndex"):
+                if isinstance(m.get(key), (int, float)):
+                    entry[key] = m[key]
+    return indexes
 
 
 def deduplicate_models(entries):
-    """Deduplicate by model_id, keeping first occurrence (has full data)."""
-    seen = {}
+    """Keep one entry per model.
+
+    Many hosts serve the same model. Price and speed differ per host.
+    We pick one entry per model slug with these rules, in this order:
+
+    1. Prefer an entry that has prices.
+    2. Prefer an entry that also has cost per task, intelligence index,
+       and end-to-end response time. The plot needs these three values.
+    3. Prefer the entry from the model creator's own API.
+    4. Prefer the entry with the lowest cost per task.
+
+    We also give each kept entry the shortest label from its group.
+    Host-specific labels are longer (for example "Gemini 3.5 Flash
+    AI Studio"), so the shortest label is the clean model name.
+    """
+    groups = {}
     for entry in entries:
-        mid = entry.get("model_id")
-        if mid and mid not in seen:
-            seen[mid] = entry
-    return list(seen.values())
+        slug = dict_or_empty(entry.get("model")).get("slug")
+        if slug:
+            groups.setdefault(slug, []).append(entry)
+
+    def sort_key(entry):
+        model = dict_or_empty(entry.get("model"))
+        pricing = dict_or_empty(entry.get("pricing"))
+        perf = dict_or_empty(entry.get("performance"))
+        host = dict_or_empty(entry.get("host"))
+        creator = dict_or_empty(model.get("creator"))
+        cost_per_task = value_or_none(pricing.get("costPerTask"))
+        has_prices = (value_or_none(pricing.get("price1mInputTokens")) is not None
+                      and value_or_none(pricing.get("price1mOutputTokens")) is not None)
+        complete = (cost_per_task is not None
+                    and value_or_none(model.get("intelligenceIndex")) is not None
+                    and value_or_none(perf.get("medianEndToEndResponseTimeSeconds")) is not None)
+        first_party = host.get("name") == creator.get("name")
+        # min() picks the best entry, so "good" must sort as "small".
+        return (not has_prices, not complete, not first_party,
+                cost_per_task if cost_per_task is not None else float("inf"))
+
+    result = []
+    for group in groups.values():
+        best = min(group, key=sort_key)
+        labels = [e.get("label") for e in group if e.get("label")]
+        if labels:
+            best["label"] = min(labels, key=len)
+        result.append(best)
+    return result
 
 
-def clean_model(entry):
-    """Extract clean model data from a raw entry."""
-    model = entry.get("model", {})
-    ts = entry.get("timescaleData", {}) or {}
-    host = entry.get("host", {}) or {}
-    creator = model.get("model_creators", {}) or {}
+def clean_model(entry, indexes=None):
+    """Extract clean model data from a raw entry.
+
+    `indexes` maps a model slug to scores from the models leaderboard
+    (see extract_model_indexes). The provider data alone does not
+    contain the Coding Index.
+
+    The site does not publish a Math Index anymore. As a stand-in,
+    math_index holds the AIME 2025 math contest score (0-100). It is
+    None for models that Artificial Analysis did not test on AIME.
+    """
+    model = dict_or_empty(entry.get("model"))
+    perf = dict_or_empty(entry.get("performance"))
+    pricing = dict_or_empty(entry.get("pricing"))
+    features = dict_or_empty(entry.get("features"))
+    host = dict_or_empty(entry.get("host"))
+    creator = dict_or_empty(model.get("creator"))
+
+    in_price = value_or_none(pricing.get("price1mInputTokens"))
+    out_price = value_or_none(pricing.get("price1mOutputTokens"))
+    blended = (3 * in_price + out_price) / 4 if in_price is not None and out_price is not None else None
+    ttft_s = value_or_none(perf.get("medianTimeToFirstTokenSeconds"))
+    e2e_s = value_or_none(perf.get("medianEndToEndResponseTimeSeconds"))
+    model_indexes = (indexes or {}).get(model.get("slug"), {})
+    aime25 = value_or_none(model.get("aime25"))
 
     return {
-        "name": model.get("name", entry.get("model_label", "?")),
+        "name": entry.get("label", "?"),
         "creator": creator.get("name", host.get("name", "?")),
         "provider": host.get("name", "?"),
         "slug": model.get("slug", ""),
-        "intelligence_index": model.get("intelligence_index"),
-        "coding_index": model.get("coding_index"),
-        "math_index": model.get("math_index"),
-        "agentic_index": model.get("agentic_index"),
-        "price_1m_input_tokens": entry.get("price_1m_input_tokens"),
-        "price_1m_output_tokens": entry.get("price_1m_output_tokens"),
-        "price_1m_cache_hit": entry.get("cache_hit_price"),
-        "blended_price_3_1": entry.get("price_1m_blended_3_1"),
-        "blended_price_7_2_1": entry.get("price_1m_blended_7_2_1"),
-        "context_window_tokens": entry.get("context_window_tokens"),
-        "output_tokens_per_second": ts.get("median_output_speed"),
-        "time_to_first_token_ms": (
-            round(ts["median_time_to_first_token"] * 1000, 1)
-            if ts.get("median_time_to_first_token") else None
-        ),
-        "reasoning": model.get("reasoning_model", False),
-        "open_weights": model.get("is_open_weights", False),
-        "release_date": model.get("release_date"),
-        "gpqa": model.get("gpqa"),
-        "mmlu_pro": model.get("mmlu_pro"),
-        "hle": model.get("hle"),
+        "intelligence_index": value_or_none(model.get("intelligenceIndex")),
+        "coding_index": model_indexes.get("codingIndex"),
+        "math_index": aime25 * 100 if aime25 is not None else None,
+        "agentic_index": model_indexes.get("agenticIndex"),
+        "cost_per_task": value_or_none(pricing.get("costPerTask")),
+        "price_1m_input_tokens": in_price,
+        "price_1m_output_tokens": out_price,
+        "price_1m_cache_hit": value_or_none(pricing.get("cacheHitPrice")),
+        "blended_price_3_1": blended,
+        "context_window_tokens": value_or_none(features.get("contextWindowTokens")),
+        "output_tokens_per_second": value_or_none(perf.get("medianOutputTokensPerSecond")),
+        "time_to_first_token_ms": round(ttft_s * 1000, 1) if ttft_s else None,
+        "e2e_response_time_s": round(e2e_s, 2) if e2e_s else None,
+        "reasoning": model.get("reasoningModel", False),
+        "open_weights": model.get("isOpenWeights", False),
+        "deprecated": model.get("deprecated", False),
+        "gpqa": value_or_none(model.get("gpqa")),
+        "hle": value_or_none(model.get("hle")),
     }
 
 
 def compress_for_calculator(models):
     """Return minimal fields needed by the aiprice.html calculator."""
-    result = []
-    for m in models:
-        result.append({
-            "name": m["name"],
-            "creator": m["creator"],
-            "slug": m["slug"],
-            "intelligence_index": m["intelligence_index"],
-            "coding_index": m["coding_index"],
-            "math_index": m["math_index"],
-            "price_1m_input_tokens": m["price_1m_input_tokens"],
-            "price_1m_output_tokens": m["price_1m_output_tokens"],
-            "price_1m_cache_hit": m["price_1m_cache_hit"],
-            "blended_price_3_1": m["blended_price_3_1"],
-            "context_window_tokens": m["context_window_tokens"],
-            "output_tokens_per_second": m["output_tokens_per_second"],
-            "time_to_first_token_ms": m["time_to_first_token_ms"],
-            "reasoning": m["reasoning"],
-            "open_weights": m["open_weights"],
-        })
-    return result
+    keep = [
+        "name", "creator", "provider", "slug",
+        "intelligence_index", "coding_index", "math_index",
+        "cost_per_task",
+        "price_1m_input_tokens", "price_1m_output_tokens", "price_1m_cache_hit",
+        "blended_price_3_1", "context_window_tokens",
+        "output_tokens_per_second", "time_to_first_token_ms", "e2e_response_time_s",
+        "reasoning", "open_weights", "deprecated",
+    ]
+    return [{k: m[k] for k in keep} for m in models]
 
 
 def main():
     parser = argparse.ArgumentParser(description="Fetch AI model data from artificialanalysis.ai")
     parser.add_argument("--file", help="Parse existing RSC dump file (skip download)")
+    parser.add_argument("--models-file", help="Parse existing models leaderboard dump file (skip download)")
     parser.add_argument("--out", default="models.json", help="Output JSON file (default: models.json)")
     parser.add_argument("--minimal", action="store_true", help="Output only calculator-essential fields")
     parser.add_argument("--pretty", action="store_true", help="Pretty-print JSON output")
@@ -169,8 +263,8 @@ def main():
         if raw is None:
             sys.exit(1)
 
-    # Step 2: Extract hostsModels
-    entries = extract_hosts_models(raw)
+    # Step 2: Extract the leaderboard rows
+    entries = extract_rows(raw)
     if entries is None:
         sys.exit(1)
     print(f"Extracted {len(entries)} raw entries (host-model pairs)")
@@ -179,8 +273,19 @@ def main():
     deduped = deduplicate_models(entries)
     print(f"Deduplicated to {len(deduped)} unique models")
 
-    # Step 4: Clean
-    models = [clean_model(e) for e in deduped]
+    # Step 4: Get Coding and Agentic Index scores from the models leaderboard.
+    # The parser can work without them. The fields are then None.
+    if args.models_file:
+        with open(args.models_file, "rb") as f:
+            models_raw = f.read()
+        print(f"Read {len(models_raw):,} bytes from {args.models_file}")
+    else:
+        models_raw = fetch_rsc(MODELS_RSC_URL)
+    indexes = extract_model_indexes(models_raw) if models_raw else {}
+    print(f"Index scores for {len(indexes)} models from the models leaderboard")
+
+    # Step 5: Clean
+    models = [clean_model(e, indexes) for e in deduped]
 
     # Remove entries without pricing
     models_with_price = [m for m in models if m["price_1m_input_tokens"] and m["price_1m_output_tokens"]]
@@ -189,7 +294,7 @@ def main():
     # Sort by intelligence index descending
     models_with_price.sort(key=lambda m: m["intelligence_index"] or 0, reverse=True)
 
-    # Step 5: Output
+    # Step 6: Output
     if args.minimal:
         output = compress_for_calculator(models_with_price)
     else:
