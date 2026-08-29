@@ -4,6 +4,11 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 ## Ordered backlog
 
+- [*] On `master` push, publish `intelligence-vs-cost.html` and `models.json`
+  to GitHub Pages
+- [*] In a GitHub workflow, regenerate `models.json` daily
+  and commit any changes to `master`
+
 ## In progress
 
 ## Completed
