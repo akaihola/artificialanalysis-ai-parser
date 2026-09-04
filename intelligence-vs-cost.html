@@ -174,6 +174,8 @@
   </header>
 
   <div class="filters" id="filter-row">
+    <label for="plan-select">Pricing plan</label>
+    <select id="plan-select" aria-label="Pricing plan"></select>
     <div role="radiogroup" aria-label="Score on the Y axis" style="display:flex; gap:14px;">
       <label><input type="radio" name="metric" value="intelligence_index" checked> Intelligence</label>
       <label><input type="radio" name="metric" value="coding_index"> Coding</label>
@@ -211,7 +213,7 @@
           <th class="num">Intelligence</th>
           <th class="num">Coding</th>
           <th class="num">Math</th>
-          <th class="num">Cost per task ($)</th>
+          <th class="num">Effective cost per task ($)</th>
           <th class="num">Response time (s)</th>
           <th>Pareto</th>
         </tr>
@@ -224,7 +226,9 @@
     <h2>How to read this chart</h2>
     <p>The X axis shows the cost to run one task of the Artificial Analysis
       Intelligence Index test suite. The scale is logarithmic: each step to the
-      right multiplies the cost by ten.</p>
+      right multiplies the effective cost by ten. Subscription prices are
+      estimates assuming you fully drain the allowance over a long window, not
+      provider invoices.</p>
     <p>The Y axis shows one of three scores. Use the buttons in the filter row
       to pick one. A higher value is better on all of them.</p>
     <ul>
@@ -275,9 +279,20 @@ const METRICS = {
   math_index: { name: "math score", axis: "AIME 2025 math contest score (0–100)" },
 };
 
+// Estimates assume the subscription allowance is fully drained over a long window.
+const PLANS = [
+  { id: "claude-api", name: "Claude API", provider: "Anthropic", monthlyFee: 0, drainedApiValue: 0, multiplier: 1 },
+  { id: "claude-max-5x", name: "Claude Max 5x", provider: "Anthropic", monthlyFee: 100, drainedApiValue: 500, multiplier: 1 / 5 },
+  { id: "claude-max-20x", name: "Claude Max 20x", provider: "Anthropic", monthlyFee: 200, drainedApiValue: 4000, multiplier: 1 / 20 },
+  { id: "chatgpt-api", name: "ChatGPT API", provider: "OpenAI", monthlyFee: 0, drainedApiValue: 0, multiplier: 1 },
+  { id: "chatgpt-plus", name: "ChatGPT Plus", provider: "OpenAI", monthlyFee: 20, drainedApiValue: 100, multiplier: 1 / 5 },
+  { id: "chatgpt-pro", name: "ChatGPT Pro", provider: "OpenAI", monthlyFee: 200, drainedApiValue: 4000, multiplier: 1 / 20 },
+];
+
 const state = {
   models: [],        // all models that have cost, response time, and a score
   metric: "intelligence_index",  // the key of the score on the Y axis
+  plan: PLANS[0],
   maxE2e: Infinity,  // filter: maximum end-to-end response time in seconds
   showDeprecated: false,
   logMin: 1, logMax: 300,  // slider range, from the data
@@ -293,6 +308,16 @@ if (isFinite(urlMaxE2e) && urlMaxE2e > 0) state.maxE2e = urlMaxE2e;
 const fmt$ = (v) => v >= 1 ? "$" + v.toFixed(2) : "$" + Number(v.toPrecision(2));
 const fmtS = (v) => v.toFixed(v < 10 ? 1 : 0) + " s";
 const fmtScore = (v) => v == null ? "—" : v.toFixed(1);
+const planMatches = (m) => m.provider === state.plan.provider;
+const effectiveCost = (m) => m.cost_per_task *
+  (planMatches(m) ? state.plan.multiplier : 1);
+const costLabel = (m) => planMatches(m) ? state.plan.name : "API";
+const planSelect = document.getElementById("plan-select");
+planSelect.innerHTML = PLANS.map((p) => `<option value="${p.id}">${p.name}</option>`).join("");
+planSelect.addEventListener("change", () => {
+  state.plan = PLANS.find((p) => p.id === planSelect.value) || PLANS[0];
+  render();
+});
 
 /* ---------- load data ---------- */
 fetch("models.json")
@@ -375,7 +400,7 @@ document.getElementById("table-toggle").addEventListener("click", (e) => {
 // a higher score and a lower cost per task.
 function paretoFront(models, metric) {
   const sorted = [...models].sort((a, b) =>
-    a.cost_per_task - b.cost_per_task || b[metric] - a[metric]);
+    effectiveCost(a) - effectiveCost(b) || b[metric] - a[metric]);
   const front = [];
   let best = -Infinity;
   for (const m of sorted) {
@@ -404,14 +429,14 @@ function render() {
   document.getElementById("e2e-value").textContent =
     isFinite(state.maxE2e) ? "≤ " + Math.round(state.maxE2e) + " s" : "No limit";
   document.getElementById("status").textContent =
-    "The chart shows " + shown.length + " of " + pool.length + " models. " +
+    "The chart shows " + shown.length + " of " + pool.length + " models at " + state.plan.name + " pricing. " +
     (hidden.length ? "The time filter hides " + hidden.length + " models. " : "") +
     (noScore ? noScore + " models have no " + METRICS[metric].name + ". " : "") +
     front.length + " models are on the Pareto line.";
 
   // Fixed axis ranges from the whole data set for the current score.
   // The axes do not jump when you move the time filter.
-  const costs = state.models.map((m) => m.cost_per_task);
+  const costs = state.models.map(effectiveCost);
   const scores = state.models.filter((m) => m[metric] != null).map((m) => m[metric]);
   const xMin = Math.min(...costs) * 0.8, xMax = Math.max(...costs) * 1.25;
   const yMin = Math.max(0, Math.floor((Math.min(...scores) - 4) / 10) * 10);
@@ -445,19 +470,19 @@ function render() {
   // Axis lines and titles.
   parts.push(`<line x1="${pad.left}" x2="${W - pad.right}" y1="${H - pad.bottom}" y2="${H - pad.bottom}" stroke="var(--axis)" stroke-width="1"/>`);
   parts.push(`<line x1="${pad.left}" x2="${pad.left}" y1="${pad.top}" y2="${H - pad.bottom}" stroke="var(--axis)" stroke-width="1"/>`);
-  parts.push(`<text x="${(pad.left + W - pad.right) / 2}" y="${H - 12}" text-anchor="middle" font-size="12" fill="var(--text-secondary)">Cost per task (USD, log scale)</text>`);
+  parts.push(`<text x="${(pad.left + W - pad.right) / 2}" y="${H - 12}" text-anchor="middle" font-size="12" fill="var(--text-secondary)">Effective cost per task (USD, log scale)</text>`);
   parts.push(`<text x="14" y="${(pad.top + H - pad.bottom) / 2}" text-anchor="middle" font-size="12" fill="var(--text-secondary)" transform="rotate(-90 14 ${(pad.top + H - pad.bottom) / 2})">${METRICS[metric].axis}</text>`);
 
   // Models hidden by the filter: faint ghosts, no tooltip.
   for (const m of hidden) {
-    parts.push(`<circle cx="${px(m.cost_per_task)}" cy="${py(m[metric])}" r="4" fill="var(--text-muted)" opacity="0.22"/>`);
+    parts.push(`<circle cx="${px(effectiveCost(m))}" cy="${py(m[metric])}" r="4" fill="var(--text-muted)" opacity="0.22"/>`);
   }
   // The Pareto line: a step line through the frontier points.
   if (front.length) {
     let d = "";
     let prev = null;
     for (const m of front) {
-      const x = px(m.cost_per_task), y = py(m[metric]);
+      const x = px(effectiveCost(m)), y = py(m[metric]);
       if (prev === null) d = `M ${x} ${y}`;
       else d += ` L ${x} ${prev} L ${x} ${y}`;
       prev = y;
@@ -468,15 +493,15 @@ function render() {
   // Every point gets a 2 px ring in the surface color, and a large
   // invisible hit circle for hover and keyboard focus.
   shown.forEach((m, i) => {
-    const x = px(m.cost_per_task), y = py(m[metric]);
+    const x = px(effectiveCost(m)), y = py(m[metric]);
     const onFront = frontSet.has(m);
     parts.push(`<circle cx="${x}" cy="${y}" r="${onFront ? 5 : 4}" fill="${onFront ? "var(--series-1)" : "var(--text-muted)"}" stroke="var(--surface-1)" stroke-width="2"/>`);
-    parts.push(`<circle cx="${x}" cy="${y}" r="12" fill="transparent" tabindex="0" role="img" data-i="${i}" aria-label="${esc(m.name)}: ${METRICS[metric].name} ${m[metric].toFixed(1)}, ${fmt$(m.cost_per_task)} per task, ${fmtS(m.e2e_response_time_s)}"/>`);
+    parts.push(`<circle cx="${x}" cy="${y}" r="12" fill="transparent" tabindex="0" role="img" data-i="${i}" aria-label="${esc(m.name)}: ${METRICS[metric].name} ${m[metric].toFixed(1)}, ${fmt$(effectiveCost(m))} ${esc(costLabel(m))} cost per task, ${fmtS(m.e2e_response_time_s)}"/>`);
   });
   // Direct labels: only the Pareto models. Labels that would overlap
   // are pushed down. A pushed label gets a thin leader line to its point.
   const labels = front.map((m) => {
-    const x = px(m.cost_per_task), y = py(m[metric]);
+    const x = px(effectiveCost(m)), y = py(m[metric]);
     const left = x > W - pad.right - 150;
     return { m, x, y, left, ly: y - 9 };
   }).sort((a, b) => a.ly - b.ly);
@@ -511,6 +536,7 @@ function esc(s) {
 }
 
 function showTooltip(m, circle) {
+  const cost = effectiveCost(m);
   tooltip.innerHTML =
     `<strong>${esc(m.name)}</strong><br>` +
     `<span style="color:var(--text-secondary)">${esc(m.creator)} · via ${esc(m.provider)}</span>` +
@@ -518,7 +544,8 @@ function showTooltip(m, circle) {
       <tr><td>Intelligence Index</td><td>${fmtScore(m.intelligence_index)}</td></tr>
       <tr><td>Coding Index</td><td>${fmtScore(m.coding_index)}</td></tr>
       <tr><td>Math (AIME 2025)</td><td>${fmtScore(m.math_index)}</td></tr>
-      <tr><td>Cost per task</td><td>${fmt$(m.cost_per_task)}</td></tr>
+      <tr><td>${esc(costLabel(m))} cost per task</td><td>${fmt$(cost)}</td></tr>
+      ${cost !== m.cost_per_task ? `<tr><td>API cost per task</td><td>${fmt$(m.cost_per_task)}</td></tr>` : ""}
       <tr><td>Response time</td><td>${fmtS(m.e2e_response_time_s)}</td></tr>
       <tr><td>Price in / out (1M)</td><td>${fmt$(m.price_1m_input_tokens)} / ${fmt$(m.price_1m_output_tokens)}</td></tr>
       <tr><td>Output speed</td><td>${Math.round(m.output_tokens_per_second)} tok/s</td></tr>
@@ -547,7 +574,7 @@ function renderTable(shown, frontSet) {
       <td class="num">${fmtScore(m.intelligence_index)}</td>
       <td class="num">${fmtScore(m.coding_index)}</td>
       <td class="num">${fmtScore(m.math_index)}</td>
-      <td class="num">${m.cost_per_task.toFixed(3)}</td>
+      <td class="num" title="API: ${m.cost_per_task.toFixed(3)}">${effectiveCost(m).toFixed(3)}</td>
       <td class="num">${m.e2e_response_time_s.toFixed(1)}</td>
       <td>${frontSet.has(m) ? "Yes" : ""}</td>
     </tr>`).join("");
