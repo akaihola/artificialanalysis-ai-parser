@@ -17,37 +17,15 @@ The Python parser in this project:
 - **Cleans** the output to only essential fields (pricing, IQ, speed, cost per task, response time, context window)
 - **Outputs** `models.json` — ~390 models with pricing, ready for downstream use
 
-> **Note:** The C++ and JavaScript parsers still target the old `hostsModels` format. They do not work with the current site. Use the Python parser.
-
 The result is a self-contained Python script with zero dependencies beyond the standard library.
 
 ## Quick start
-
-### C++
-
-```bash
-g++ -std=c++17 -O2 artificialanalysis.ai-parser.cpp -lcurl -o aaparser
-./aaparser --minimal --pretty          # fetch + save to models.json
-```
-
-Requires: `libcurl`, `nlohmann/json` (header-only, auto-downloaded if missing).
 
 ### Python
 
 ```bash
 python3 artificialanalysis.ai-parser.py --minimal --pretty
 ```
-
-### JavaScript (Node.js)
-
-```js
-// Node.js — works without CORS restrictions
-const { AAParser } = require('./artificialanalysis.ai-parser.js');
-const models = await AAParser.fetch({ minimal: true });
-console.log(models[0].name, models[0].price_1m_input_tokens);
-```
-
-> **Note:** The JS parser does **not** work directly in the browser. The RSC endpoint requires the custom `rsc` header which triggers a CORS preflight, and the server does not return `Access-Control-Allow-Headers`. Use in Node.js or through a CORS proxy.
 
 ### Output
 
