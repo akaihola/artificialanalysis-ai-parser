@@ -1,5 +1,7 @@
 # artificialanalysis-ai-parser
 
+This fork adopts only the Artificial Analysis data parsing from upstream and repurposes the repository for an interactive [intelligence-vs-cost visualization](https://akaihola.github.io/artificialanalysis-ai-parser/intelligence-vs-cost.html).
+
 Parser for [artificialanalysis.ai](https://artificialanalysis.ai) — extracts AI model data (pricing, benchmarks, speed) **without an API key**.
 
 ## Why?
