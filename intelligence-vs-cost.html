@@ -174,8 +174,10 @@
   </header>
 
   <div class="filters" id="filter-row">
-    <label for="plan-select">Pricing plan</label>
-    <select id="plan-select" aria-label="Pricing plan"></select>
+    <label for="claude-plan-select">Claude plan</label>
+    <select id="claude-plan-select" aria-label="Claude subscription plan"></select>
+    <label for="codex-plan-select">Codex plan</label>
+    <select id="codex-plan-select" aria-label="Codex subscription plan"></select>
     <div role="radiogroup" aria-label="Score on the Y axis" style="display:flex; gap:14px;">
       <label><input type="radio" name="metric" value="intelligence_index" checked> Intelligence</label>
       <label><input type="radio" name="metric" value="coding_index"> Coding</label>
@@ -203,6 +205,14 @@
     <svg id="chart" role="img" aria-label="Scatter chart of intelligence index against cost per task"></svg>
     <div class="tooltip" id="tooltip"></div>
   </div>
+
+  <section class="help subscription-pricing">
+    <h2>How subscription pricing is estimated</h2>
+    <p>Subscription costs are modeled by applying each selected plan's monthly
+      fee and estimated allowance to the matching provider's API cost. This
+      assumes the allowance is fully used over a long window. It is a comparison
+      estimate, not a provider invoice, and actual limits and usage may differ.</p>
+  </section>
 
   <section class="table-view" id="table-view" hidden>
     <table id="data-table">
@@ -292,32 +302,48 @@ const PLANS = [
 const state = {
   models: [],        // all models that have cost, response time, and a score
   metric: "intelligence_index",  // the key of the score on the Y axis
-  plan: PLANS[0],
+  plans: { claude: PLANS[0], codex: PLANS[3] },
   maxE2e: Infinity,  // filter: maximum end-to-end response time in seconds
   showDeprecated: false,
   logMin: 1, logMax: 300,  // slider range, from the data
 };
 
-const FILTER_PARAMS = { metric: "metric", maxE2e: "max_response_time" };
+const FILTER_PARAMS = {
+  metric: "metric", maxE2e: "max_response_time",
+  claudePlan: "claude_plan", codexPlan: "codex_plan",
+};
 const urlParams = new URLSearchParams(location.search);
 const urlMetric = urlParams.get(FILTER_PARAMS.metric);
 const urlMaxE2e = Number(urlParams.get(FILTER_PARAMS.maxE2e));
+const planFor = (provider, id, fallback) =>
+  PLANS.find((p) => p.provider === provider && p.id === id) || fallback;
+state.plans.claude = planFor("Anthropic", urlParams.get(FILTER_PARAMS.claudePlan), PLANS[0]);
+state.plans.codex = planFor("OpenAI", urlParams.get(FILTER_PARAMS.codexPlan), PLANS[3]);
 if (Object.hasOwn(METRICS, urlMetric)) state.metric = urlMetric;
 if (isFinite(urlMaxE2e) && urlMaxE2e > 0) state.maxE2e = urlMaxE2e;
 
 const fmt$ = (v) => v >= 1 ? "$" + v.toFixed(2) : "$" + Number(v.toPrecision(2));
 const fmtS = (v) => v.toFixed(v < 10 ? 1 : 0) + " s";
 const fmtScore = (v) => v == null ? "—" : v.toFixed(1);
-const planMatches = (m) => m.provider === state.plan.provider;
-const effectiveCost = (m) => m.cost_per_task *
-  (planMatches(m) ? state.plan.multiplier : 1);
-const costLabel = (m) => planMatches(m) ? state.plan.name : "API";
-const planSelect = document.getElementById("plan-select");
-planSelect.innerHTML = PLANS.map((p) => `<option value="${p.id}">${p.name}</option>`).join("");
-planSelect.addEventListener("change", () => {
-  state.plan = PLANS.find((p) => p.id === planSelect.value) || PLANS[0];
-  render();
-});
+const planForModel = (m) => m.provider === "Anthropic" ? state.plans.claude :
+  m.provider === "OpenAI" ? state.plans.codex : null;
+const effectiveCost = (m) => m.cost_per_task * (planForModel(m)?.multiplier || 1);
+const costLabel = (m) => planForModel(m)?.name || "API";
+const planSelects = [
+  ["claude-plan-select", "Anthropic", "claude"],
+  ["codex-plan-select", "OpenAI", "codex"],
+];
+for (const [id, provider, key] of planSelects) {
+  const select = document.getElementById(id);
+  select.innerHTML = PLANS.filter((p) => p.provider === provider)
+    .map((p) => `<option value="${p.id}">${p.name}</option>`).join("");
+  select.value = state.plans[key].id;
+  select.addEventListener("change", () => {
+    state.plans[key] = planFor(provider, select.value, state.plans[key]);
+    syncUrl();
+    render();
+  });
+}
 
 /* ---------- load data ---------- */
 fetch("models.json")
@@ -361,6 +387,8 @@ function secondsToSlider(s) {
 function syncUrl() {
   const url = new URL(location.href);
   url.searchParams.set(FILTER_PARAMS.metric, state.metric);
+  url.searchParams.set(FILTER_PARAMS.claudePlan, state.plans.claude.id);
+  url.searchParams.set(FILTER_PARAMS.codexPlan, state.plans.codex.id);
   if (isFinite(state.maxE2e)) url.searchParams.set(FILTER_PARAMS.maxE2e, state.maxE2e);
   else url.searchParams.delete(FILTER_PARAMS.maxE2e);
   history.replaceState(null, "", url);
@@ -429,7 +457,8 @@ function render() {
   document.getElementById("e2e-value").textContent =
     isFinite(state.maxE2e) ? "≤ " + Math.round(state.maxE2e) + " s" : "No limit";
   document.getElementById("status").textContent =
-    "The chart shows " + shown.length + " of " + pool.length + " models at " + state.plan.name + " pricing. " +
+    "The chart shows " + shown.length + " of " + pool.length + " models at " +
+    state.plans.claude.name + " + " + state.plans.codex.name + " pricing. " +
     (hidden.length ? "The time filter hides " + hidden.length + " models. " : "") +
     (noScore ? noScore + " models have no " + METRICS[metric].name + ". " : "") +
     front.length + " models are on the Pareto line.";
