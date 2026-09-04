@@ -253,6 +253,10 @@
   .chart-tooltip .tt-row { display: flex; justify-content: space-between; gap: 12px; padding: 2px 0; }
   .chart-tooltip .tt-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: middle; }
   .chart-tooltip .tt-val { font-weight: 700; }
+  .chart-section.fullscreen-fallback { position: fixed; inset: 0; z-index: 1000; margin: 0; overflow: auto; padding: 24px; }
+  .chart-section:fullscreen { background: var(--bg); overflow: auto; padding: 24px; }
+  .chart-section:fullscreen .chart-container,
+  .chart-section.fullscreen-fallback .chart-container { height: calc(100vh - 170px); min-height: 300px; }
   .toggle-section { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
   .bar-type-btn {
     background: var(--surface2); border: 1px solid var(--border); color: var(--text-dim);
@@ -386,7 +390,7 @@
   </div>
 
   <!-- CHART -->
-  <div class="section">
+  <div class="section chart-section" id="chartSection">
     <h2>
       <span><span class="icon">📊</span> Token Volume by Day</span>
       <span class="help-btn" onclick="toggleHelp()" title="What do these buttons show?" style="cursor:pointer;margin-left:8px;font-size:0.8rem;color:var(--text-dim);background:var(--surface2);border-radius:50%;width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;">?</span>
@@ -402,6 +406,7 @@
       <button class="bar-type-btn" data-mode="grouped" onclick="setChartMode('grouped')">Grouped</button>
       <button class="bar-type-btn" data-mode="cost" onclick="setChartMode('cost')">Cost ($)</button>
       <button class="bar-type-btn" data-mode="prompts" onclick="setChartMode('prompts')">Prompts</button>
+      <button class="bar-type-btn" id="fullscreenChart" type="button" aria-pressed="false" aria-label="Open chart in full screen">Full screen</button>
     </div>
     <div class="chart-container" id="chart"></div>
   </div>
@@ -718,6 +723,11 @@ function highlightOption() {
 // Global left/right arrows when dropdown is CLOSED
 document.addEventListener('keydown', function(e) {
   if (document.getElementById('modelDropdown').classList.contains('open')) return;
+  if (e.key === 'Escape' && document.activeElement.id === 'modelSearch') return;
+  if (e.key === 'Escape' && (document.fullscreenElement || document.getElementById('chartSection').classList.contains('fullscreen-fallback'))) {
+    exitChartFullscreen();
+    return;
+  }
   if (e.key === 'ArrowLeft') { e.preventDefault(); selectPrev(); }
   else if (e.key === 'ArrowRight') { e.preventDefault(); selectNext(); }
 });
@@ -912,6 +922,27 @@ document.getElementById('priceCached').addEventListener('input', e => { prices.c
 document.getElementById('priceInput').addEventListener('input', e => { prices.input = parseFloat(e.target.value)||0; renderAll(); });
 document.getElementById('priceOutput').addEventListener('input', e => { prices.output = parseFloat(e.target.value)||0; renderAll(); });
 function setChartMode(mode) { chartMode = mode; document.querySelectorAll('.bar-type-btn').forEach(b => b.classList.toggle('active', b.dataset.mode===mode)); renderChart(); }
+const chartSection = document.getElementById('chartSection');
+const fullscreenButton = document.getElementById('fullscreenChart');
+function syncChartFullscreen() {
+  const active = document.fullscreenElement === chartSection || chartSection.classList.contains('fullscreen-fallback');
+  chartSection.classList.toggle('fullscreen-fallback', active && !document.fullscreenElement);
+  fullscreenButton.textContent = active ? 'Exit full screen' : 'Full screen';
+  fullscreenButton.setAttribute('aria-pressed', String(active));
+  fullscreenButton.setAttribute('aria-label', active ? 'Exit chart full screen' : 'Open chart in full screen');
+  document.getElementById('chartTooltip').classList.remove('show');
+  renderChart();
+}
+function exitChartFullscreen() {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else { chartSection.classList.remove('fullscreen-fallback'); syncChartFullscreen(); }
+}
+fullscreenButton.addEventListener('click', () => {
+  if (document.fullscreenElement === chartSection || chartSection.classList.contains('fullscreen-fallback')) { exitChartFullscreen(); return; }
+  if (!chartSection.requestFullscreen) { chartSection.classList.add('fullscreen-fallback'); syncChartFullscreen(); return; }
+  chartSection.requestFullscreen().catch(() => { chartSection.classList.add('fullscreen-fallback'); syncChartFullscreen(); });
+});
+document.addEventListener('fullscreenchange', syncChartFullscreen);
 function toggleHelp() { const h = document.getElementById('helpText'); h.style.display = h.style.display==='none' ? 'block' : 'none'; }
 function togglePriceConfig() {
   const pc = document.getElementById('priceConfig');
