@@ -193,6 +193,7 @@
       <span id="e2e-value" style="min-width:64px;">No limit</span>
     </div>
     <label><input type="checkbox" id="show-deprecated"> Show deprecated models</label>
+    <label><input type="checkbox" id="pareto-y-zoom"> Zoom Y axis to Pareto line</label>
     <button id="table-toggle" aria-pressed="false">Table view</button>
     <button id="fullscreen-toggle" aria-pressed="false" aria-label="Open chart in full screen">Full screen</button>
   </div>
@@ -308,6 +309,7 @@ const state = {
   plans: { claude: PLANS[0], codex: PLANS[3] },
   maxE2e: Infinity,  // filter: maximum end-to-end response time in seconds
   showDeprecated: false,
+  paretoYZoom: false,
   logMin: 1, logMax: 300,  // slider range, from the data
 };
 
@@ -427,6 +429,10 @@ document.getElementById("show-deprecated").addEventListener("change", (e) => {
   state.showDeprecated = e.target.checked;
   render();
 });
+document.getElementById("pareto-y-zoom").addEventListener("change", (e) => {
+  state.paretoYZoom = e.target.checked;
+  render();
+});
 document.getElementById("table-toggle").addEventListener("click", (e) => {
   const btn = e.currentTarget;
   const on = btn.getAttribute("aria-pressed") !== "true";
@@ -506,13 +512,13 @@ function render() {
     (noScore ? noScore + " models have no " + METRICS[metric].name + ". " : "") +
     front.length + " models are on the Pareto line.";
 
-  // Fixed axis ranges from the whole data set for the current score.
-  // The axes do not jump when you move the time filter.
+  // Use fixed ranges from the whole data set unless Pareto zoom is enabled.
   const costs = state.models.map(effectiveCost);
   const scores = state.models.filter((m) => m[metric] != null).map((m) => m[metric]);
+  const yScores = state.paretoYZoom && front.length ? front.map((m) => m[metric]) : scores;
   const xMin = Math.min(...costs) * 0.8, xMax = Math.max(...costs) * 1.25;
-  const yMin = Math.max(0, Math.floor((Math.min(...scores) - 4) / 10) * 10);
-  const yMax = Math.ceil((Math.max(...scores) + 2) / 10) * 10;
+  const yMin = Math.max(0, Math.floor((Math.min(...yScores) - 4) / 10) * 10);
+  const yMax = Math.ceil((Math.max(...yScores) + 2) / 10) * 10;
 
   const fullscreen = isChartFullscreen();
   const W = fullscreen
