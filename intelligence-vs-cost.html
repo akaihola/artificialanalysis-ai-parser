@@ -426,6 +426,37 @@ document.getElementById("table-toggle").addEventListener("click", (e) => {
   render();
 });
 
+/* ---------- full screen chart ---------- */
+const chartCard = document.getElementById("chart-card");
+const fullscreenButton = document.getElementById("fullscreen-toggle");
+function isChartFullscreen() {
+  return document.fullscreenElement === chartCard || chartCard.classList.contains("fullscreen-fallback");
+}
+function syncChartFullscreen() {
+  const active = isChartFullscreen();
+  chartCard.classList.toggle("fullscreen-fallback", active && !document.fullscreenElement);
+  fullscreenButton.textContent = active ? "Exit full screen" : "Full screen";
+  fullscreenButton.setAttribute("aria-pressed", String(active));
+  fullscreenButton.setAttribute("aria-label", active ? "Exit chart full screen" : "Open chart in full screen");
+  hideTooltip();
+  render();
+}
+function exitChartFullscreen() {
+  if (document.fullscreenElement) document.exitFullscreen();
+  else { chartCard.classList.remove("fullscreen-fallback"); syncChartFullscreen(); }
+}
+fullscreenButton.addEventListener("click", () => {
+  if (isChartFullscreen()) { exitChartFullscreen(); return; }
+  if (!chartCard.requestFullscreen) { chartCard.classList.add("fullscreen-fallback"); syncChartFullscreen(); return; }
+  chartCard.requestFullscreen().catch(() => { chartCard.classList.add("fullscreen-fallback"); syncChartFullscreen(); });
+});
+document.addEventListener("fullscreenchange", syncChartFullscreen);
+document.addEventListener("keydown", (e) => {
+  const active = document.activeElement;
+  const typing = active && (active.tagName === "INPUT" || active.tagName === "SELECT");
+  if (e.key === "Escape" && !typing && isChartFullscreen()) exitChartFullscreen();
+});
+
 /* ---------- Pareto line ---------- */
 // A model is on the Pareto line when no other model has both
 // a higher score and a lower cost per task.
@@ -474,8 +505,11 @@ function render() {
   const yMin = Math.max(0, Math.floor((Math.min(...scores) - 4) / 10) * 10);
   const yMax = Math.ceil((Math.max(...scores) + 2) / 10) * 10;
 
-  const W = Math.max(640, Math.min(1024, svg.parentElement.clientWidth - 16));
-  const H = 520;
+  const fullscreen = isChartFullscreen();
+  const W = fullscreen
+    ? Math.max(640, svg.parentElement.clientWidth - 16)
+    : Math.max(640, Math.min(1024, svg.parentElement.clientWidth - 16));
+  const H = fullscreen ? Math.max(520, window.innerHeight - 160) : 520;
   const pad = { top: 14, right: 24, bottom: 52, left: 52 };
   const px = (c) => pad.left + (Math.log(c) - Math.log(xMin)) / (Math.log(xMax) - Math.log(xMin)) * (W - pad.left - pad.right);
   const py = (score) => pad.top + (yMax - score) / (yMax - yMin) * (H - pad.top - pad.bottom);
