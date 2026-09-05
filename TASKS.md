@@ -9,6 +9,8 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 ## In progress
 
+- [*] Move the Full screen button to the chart top-right, include filters in full-screen mode, and use the full window height
+
 ## Completed
 
 [*]: TASKS.md
