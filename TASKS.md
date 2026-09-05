@@ -4,8 +4,6 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 ## Ordered backlog
 
-- [*] On `master` push, publish `intelligence-vs-cost.html` and `models.json`
-  to GitHub Pages
 - [*] In a GitHub workflow, regenerate `models.json` daily
   and commit any changes to `master`
 
@@ -29,7 +27,7 @@ Here are the rules for TASKS.md usage:
 - Link references are listed between `## Completed` and `## Rules`.
 - If any issue is missing a link:
   - Create the first missing numbered description file in
-    docs/tasks/<NNN-issue-description>.md and add the link
+    docs/tasks/<N-issue-description>.md and add the link
 
 ### Modifying issues
 
@@ -41,14 +39,24 @@ Here are the rules for TASKS.md usage:
 
 ### Workflow for new issue completion
 
+1. Choose issue and schedule work (typically by a heartbeat)
 - Pick the first backlog issue with no dependency to any uncompleted issue.
-- Move it to `In progress` in `master` branch.
+- Move it under `## Scheduled` in `TASKS.md` and remove it from `## Ordered
+  backlog` in the `main` branch and commit.
+
+2. Work on the issue (typically by a task workflow)
+- Move the issue under `## In progress` in `TASKS.md` in the worktree branch,
+  ensure it's not in `## Ordered backlog`, and commit.
 - Create or update, review and refine a plan in
-  docs/tasks/<N-issue-description>.md in `master` (skip for `[*]` items).
-- Commit description file (if any) and TASKS.md in `master`.
-- From now on, ensure worktree feature branch is always rebased on `master`.
-- Implement the plan, and review and refine the implementation in the
-  worktree feature branch.
-- Merge the rebased branch on `master`. Remove the worktree and branch only
-  if you created them yourself.
-- Move the issue to `Completed` in TASKS.md and commit.
+  docs/tasks/<N-issue-description>.md in `main` if more description is needed
+  than nicely fits in a bullet point. If you created a plan document, link to it
+  using a new `[N]` reference-style link.
+- Commit description file (if any) and TASKS.md in `main`.
+- From now on, ensure worktree feature branch is always rebased on `main`.
+- Implement the plan, and lint, test, review and refine the implementation in
+  the worktree feature branch.
+
+3. Merge and deploy (typically by last steps of a task workflow)
+- Merge the rebased branch on `main`, and remove the worktree and branch.
+- Move the issue from `## In progress` to `## Completed` in TASKS.md and commit.
+- Do any deployment steps if defined in the general development worklow.
