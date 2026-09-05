@@ -404,6 +404,15 @@ slider.addEventListener("input", () => {
   syncUrl();
   render();
 });
+slider.addEventListener("wheel", (e) => {
+  if (!e.deltaX) return;
+  const step = +(slider.step || 1);
+  const value = Math.min(+slider.max, Math.max(+slider.min, +slider.value + (e.deltaX > 0 ? step : -step)));
+  if (value === +slider.value) return;
+  e.preventDefault();
+  slider.value = value;
+  slider.dispatchEvent(new Event("input", { bubbles: true }));
+});
 numBox.addEventListener("input", () => {
   const v = parseFloat(numBox.value);
   state.maxE2e = v > 0 ? v : Infinity;
