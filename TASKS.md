@@ -4,13 +4,22 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 ## Ordered backlog
 
-- [*] In a GitHub workflow, regenerate `models.json` daily
-  and commit any changes to `master`
+- Move `Full screen` button to the top right corner of the chart and use the
+  diagonal two-head arrow symbol instead of a text label for it. Include the
+  filters panel in the full screen view of the chart. Utilize the full height of
+  the window in full screen mode.
+
+- Adjust max response time using horizontal scrolling on a touchpad.
+
+- Add a toggle for zooming the chart vertically to only include the Y range of
+  points on the Pareto line.
 
 ## In progress
 
 - [*] Add Pareto chart Y-axis zoom
 - [*] Adjust max response time using horizontal scrolling on a touchpad
+- [*] In a GitHub workflow, regenerate `models.json` daily
+  and commit any changes to `master`
 
 ## Completed
 
