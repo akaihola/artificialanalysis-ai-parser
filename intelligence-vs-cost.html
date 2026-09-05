@@ -91,6 +91,7 @@
     cursor: pointer;
   }
   .filters button[aria-pressed="true"] { background: var(--series-1); color: #fff; border-color: transparent; }
+  .fullscreen-toggle { position: absolute; top: 12px; right: 12px; z-index: 2; font-size: 20px; line-height: 1; }
 
   .status { color: var(--text-secondary); font-size: 13px; margin: 0 0 8px; }
 
@@ -101,8 +102,13 @@
     border-radius: 10px;
     padding: 16px 8px 8px;
   }
-  .card.fullscreen-fallback { position: fixed; inset: 0; z-index: 1000; margin: 0; overflow: auto; padding: 16px; background: var(--surface-1); }
-  .card:fullscreen { background: var(--surface-1); overflow: auto; padding: 16px; }
+  .card.fullscreen-fallback, .card:fullscreen {
+    position: fixed; inset: 0; z-index: 1000; margin: 0; overflow: auto;
+    padding: 16px; background: var(--surface-1); height: 100vh;
+    display: flex; flex-direction: column;
+  }
+  .card.fullscreen-fallback .filters, .card:fullscreen .filters { flex: none; margin-right: 44px; }
+  .card.fullscreen-fallback svg, .card:fullscreen svg { flex: 1; min-height: 0; }
   svg { display: block; width: 100%; height: auto; }
   svg text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
   /* Labels and lines must not block the mouse. Only the points react. */
@@ -175,7 +181,11 @@
       Theme</button>
   </header>
 
-  <div class="filters" id="filter-row">
+  <p class="status" id="status">Loading model data …</p>
+
+  <div class="card" id="chart-card">
+    <button id="fullscreen-toggle" class="fullscreen-toggle" aria-pressed="false" aria-label="Open chart in full screen">⤢</button>
+    <div class="filters" id="filter-row">
     <label for="claude-plan-select">Claude plan</label>
     <select id="claude-plan-select" aria-label="Claude subscription plan"></select>
     <label for="codex-plan-select">Codex plan</label>
@@ -194,12 +204,7 @@
     </div>
     <label><input type="checkbox" id="show-deprecated"> Show deprecated models</label>
     <button id="table-toggle" aria-pressed="false">Table view</button>
-    <button id="fullscreen-toggle" aria-pressed="false" aria-label="Open chart in full screen">Full screen</button>
-  </div>
-
-  <p class="status" id="status">Loading model data …</p>
-
-  <div class="card" id="chart-card">
+    </div>
     <div class="legend" id="legend">
       <span><span class="dot" style="background:var(--series-1)"></span> On the Pareto line</span>
       <span><span class="dot" style="background:var(--text-muted)"></span> Other models in the filter</span>
@@ -435,7 +440,6 @@ function isChartFullscreen() {
 function syncChartFullscreen() {
   const active = isChartFullscreen();
   chartCard.classList.toggle("fullscreen-fallback", active && !document.fullscreenElement);
-  fullscreenButton.textContent = active ? "Exit full screen" : "Full screen";
   fullscreenButton.setAttribute("aria-pressed", String(active));
   fullscreenButton.setAttribute("aria-label", active ? "Exit chart full screen" : "Open chart in full screen");
   hideTooltip();
@@ -474,6 +478,8 @@ function paretoFront(models, metric) {
 /* ---------- chart ---------- */
 const svg = document.getElementById("chart");
 const tooltip = document.getElementById("tooltip");
+const filterRow = document.getElementById("filter-row");
+const legend = document.getElementById("legend");
 
 function render() {
   if (!state.models.length) return;
@@ -509,7 +515,9 @@ function render() {
   const W = fullscreen
     ? Math.max(640, svg.parentElement.clientWidth - 16)
     : Math.max(640, Math.min(1024, svg.parentElement.clientWidth - 16));
-  const H = fullscreen ? Math.max(520, window.innerHeight - 160) : 520;
+  const H = fullscreen
+    ? Math.max(520, chartCard.clientHeight - filterRow.offsetHeight - legend.offsetHeight - 40)
+    : 520;
   const pad = { top: 14, right: 24, bottom: 52, left: 52 };
   const px = (c) => pad.left + (Math.log(c) - Math.log(xMin)) / (Math.log(xMax) - Math.log(xMin)) * (W - pad.left - pad.right);
   const py = (score) => pad.top + (yMax - score) / (yMax - yMin) * (H - pad.top - pad.bottom);
