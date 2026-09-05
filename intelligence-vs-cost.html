@@ -101,6 +101,8 @@
     border-radius: 10px;
     padding: 16px 8px 8px;
   }
+  .card.fullscreen-fallback { position: fixed; inset: 0; z-index: 1000; margin: 0; overflow: auto; padding: 16px; background: var(--surface-1); }
+  .card:fullscreen { background: var(--surface-1); overflow: auto; padding: 16px; }
   svg { display: block; width: 100%; height: auto; }
   svg text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
   /* Labels and lines must not block the mouse. Only the points react. */
@@ -192,11 +194,12 @@
     </div>
     <label><input type="checkbox" id="show-deprecated"> Show deprecated models</label>
     <button id="table-toggle" aria-pressed="false">Table view</button>
+    <button id="fullscreen-toggle" aria-pressed="false" aria-label="Open chart in full screen">Full screen</button>
   </div>
 
   <p class="status" id="status">Loading model data …</p>
 
-  <div class="card">
+  <div class="card" id="chart-card">
     <div class="legend" id="legend">
       <span><span class="dot" style="background:var(--series-1)"></span> On the Pareto line</span>
       <span><span class="dot" style="background:var(--text-muted)"></span> Other models in the filter</span>
