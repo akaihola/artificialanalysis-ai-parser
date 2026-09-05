@@ -101,8 +101,12 @@
     border-radius: 10px;
     padding: 16px 8px 8px;
   }
-  .card.fullscreen-fallback { position: fixed; inset: 0; z-index: 1000; margin: 0; overflow: auto; padding: 16px; background: var(--surface-1); }
-  .card:fullscreen { background: var(--surface-1); overflow: auto; padding: 16px; }
+  .card.fullscreen-fallback, .card:fullscreen { background: var(--surface-1); overflow: hidden; padding: 16px; }
+  .card.fullscreen-fallback { position: fixed; inset: 0; z-index: 1000; margin: 0; }
+  .card.fullscreen-fallback, .card:fullscreen { height: 100vh; display: flex; flex-direction: column; }
+  .card.fullscreen-fallback .filters, .card:fullscreen .filters { flex: none; }
+  .card.fullscreen-fallback svg, .card:fullscreen svg { flex: 1; min-height: 0; }
+  #fullscreen-toggle { position: absolute; top: 10px; right: 10px; z-index: 1; width: 32px; height: 32px; padding: 0; font-size: 22px; line-height: 1; }
   svg { display: block; width: 100%; height: auto; }
   svg text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
   /* Labels and lines must not block the mouse. Only the points react. */
@@ -175,6 +179,7 @@
       Theme</button>
   </header>
 
+  <div class="card" id="chart-card">
   <div class="filters" id="filter-row">
     <label for="claude-plan-select">Claude plan</label>
     <select id="claude-plan-select" aria-label="Claude subscription plan"></select>
@@ -195,12 +200,11 @@
     <label><input type="checkbox" id="show-deprecated"> Show deprecated models</label>
     <label><input type="checkbox" id="pareto-y-zoom"> Zoom Y axis to Pareto line</label>
     <button id="table-toggle" aria-pressed="false">Table view</button>
-    <button id="fullscreen-toggle" aria-pressed="false" aria-label="Open chart in full screen">Full screen</button>
+    <button id="fullscreen-toggle" aria-pressed="false" aria-label="Open chart in full screen" title="Open chart in full screen">⤢</button>
   </div>
 
   <p class="status" id="status">Loading model data …</p>
 
-  <div class="card" id="chart-card">
     <div class="legend" id="legend">
       <span><span class="dot" style="background:var(--series-1)"></span> On the Pareto line</span>
       <span><span class="dot" style="background:var(--text-muted)"></span> Other models in the filter</span>
@@ -489,6 +493,9 @@ function paretoFront(models, metric) {
 /* ---------- chart ---------- */
 const svg = document.getElementById("chart");
 const tooltip = document.getElementById("tooltip");
+const filterRow = document.getElementById("filter-row");
+const status = document.getElementById("status");
+const legend = document.getElementById("legend");
 
 function render() {
   if (!state.models.length) return;
@@ -524,7 +531,9 @@ function render() {
   const W = fullscreen
     ? Math.max(640, svg.parentElement.clientWidth - 16)
     : Math.max(640, Math.min(1024, svg.parentElement.clientWidth - 16));
-  const H = fullscreen ? Math.max(520, window.innerHeight - 160) : 520;
+  const H = fullscreen
+    ? Math.max(520, chartCard.clientHeight - filterRow.offsetHeight - status.offsetHeight - legend.offsetHeight - 48)
+    : 520;
   const pad = { top: 14, right: 24, bottom: 52, left: 52 };
   const px = (c) => pad.left + (Math.log(c) - Math.log(xMin)) / (Math.log(xMax) - Math.log(xMin)) * (W - pad.left - pad.right);
   const py = (score) => pad.top + (yMax - score) / (yMax - yMin) * (H - pad.top - pad.bottom);
