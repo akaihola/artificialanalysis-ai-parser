@@ -16,6 +16,7 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 ## In progress
 
+- [*] Move the Full screen button to the chart top-right, include filters in full-screen mode, and use the full window height
 - [*] Add Pareto chart Y-axis zoom
 - [*] Adjust max response time using horizontal scrolling on a touchpad
 - [*] In a GitHub workflow, regenerate `models.json` daily
