@@ -121,29 +121,6 @@ To use the page:
 
 The page has no dependencies. It also has a table view, tooltips, keyboard navigation, and a dark mode.
 
-## Companion: interactive cost calculator
-
-`dashboard.html` — a dark-themed token cost dashboard that lets you see how much you'd spend using different AI model providers.
-
-`compact-dashboard.html` — a lightweight version: no charts, 4 top models compared side by side. Each model card shows estimated total cost for your token data at a glance.
-
-**Try it live:**  
-[Full dashboard](https://maureranton.github.io/dashboard/dashboard.html) — charts, model selector, date range filter  
-[Compact dashboard](https://maureranton.github.io/dashboard/compact-dashboard.html) — 4 models, instant cost comparison
-
-**To run locally:**
-
-1. Open `dashboard.html` or `compact-dashboard.html` in a browser (or serve via any HTTP server)
-2. They load `paths.json` → `data.json` + `models.json`
-3. Select a model — prices auto-fill from Artificial Analysis data
-4. Tweak token counts — costs recalculate instantly
-
-Example files included:
-- `example-paths.json` — points to `example-data.json` and `models.json`
-- `example-data.json` — 7 days of synthetic token data for demo
-
-To use your own data, rename `example-paths.json` → `paths.json`, point it at your data file, and update your `data.json` with real token counts.
-
 ## License
 
 GPL-3.0 — Copyright (C) 2026 Anton Maurer
