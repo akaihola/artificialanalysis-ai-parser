@@ -9,6 +9,8 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 ## In progress
 
+- [*] Adjust max response time using horizontal scrolling on a touchpad
+
 ## Completed
 
 [*]: TASKS.md
