@@ -2,12 +2,10 @@
 
 Rules for TASKS.md usage are at the bottom of the file.
 
-## Ordered backlog
+## In progress
 
 - [*] In a GitHub workflow, regenerate `models.json` daily
   and commit any changes to `master`
-
-## In progress
 
 ## Completed
 
