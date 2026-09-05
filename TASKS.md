@@ -9,6 +9,7 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 ## In progress
 
+- [*] Add Pareto chart Y-axis zoom
 - [*] Adjust max response time using horizontal scrolling on a touchpad
 
 ## Completed
