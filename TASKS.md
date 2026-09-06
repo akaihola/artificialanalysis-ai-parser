@@ -9,8 +9,6 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 ## In progress
 
-- [*] Add Pareto chart Y-axis zoom
-
 ## Completed
 
 - [*] Move the Full screen button to the chart top-right, include filters in
@@ -20,6 +18,8 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 - [*] In a GitHub workflow, regenerate `models.json` daily and commit any
   changes to `master`
+
+- [*] Add Pareto chart Y-axis zoom
 
 [*]: TASKS.md
 
