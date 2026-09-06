@@ -410,15 +410,20 @@ slider.addEventListener("input", () => {
   syncUrl();
   render();
 });
-slider.addEventListener("wheel", (e) => {
-  if (!e.deltaX) return;
+// Horizontal touchpad scroll nudges the max-response-time slider. A dominance
+// check keeps ordinary (mostly vertical) wheel/touchpad scrolling working.
+function nudgeMaxE2e(deltaX) {
   const step = +(slider.step || 1);
-  const value = Math.min(+slider.max, Math.max(+slider.min, +slider.value + (e.deltaX > 0 ? step : -step)));
+  const value = Math.min(+slider.max, Math.max(+slider.min, +slider.value + (deltaX > 0 ? step : -step)));
   if (value === +slider.value) return;
-  e.preventDefault();
   slider.value = value;
   slider.dispatchEvent(new Event("input", { bubbles: true }));
-});
+}
+slider.addEventListener("wheel", (e) => {
+  if (!e.deltaX || Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+  e.preventDefault();
+  nudgeMaxE2e(e.deltaX);
+}, { passive: false });
 numBox.addEventListener("input", () => {
   const v = parseFloat(numBox.value);
   state.maxE2e = v > 0 ? v : Infinity;
@@ -496,6 +501,13 @@ const tooltip = document.getElementById("tooltip");
 const filterRow = document.getElementById("filter-row");
 const status = document.getElementById("status");
 const legend = document.getElementById("legend");
+
+// Same horizontal-touchpad-scroll gesture, but over the chart itself.
+svg.addEventListener("wheel", (e) => {
+  if (!e.deltaX || Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+  e.preventDefault();
+  nudgeMaxE2e(e.deltaX);
+}, { passive: false });
 
 function render() {
   if (!state.models.length) return;
