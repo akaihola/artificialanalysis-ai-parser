@@ -9,8 +9,6 @@ Rules for TASKS.md usage are at the bottom of the file.
   filters panel in the full screen view of the chart. Utilize the full height of
   the window in full screen mode.
 
-- Adjust max response time using horizontal scrolling on a touchpad.
-
 - Add a toggle for zooming the chart vertically to only include the Y range of
   points on the Pareto line.
 
