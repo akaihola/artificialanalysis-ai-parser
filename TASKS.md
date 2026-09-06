@@ -4,11 +4,6 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 ## Ordered backlog
 
-- Move `Full screen` button to the top right corner of the chart and use the
-  diagonal two-head arrow symbol instead of a text label for it. Include the
-  filters panel in the full screen view of the chart. Utilize the full height of
-  the window in full screen mode.
-
 - Add a toggle for zooming the chart vertically to only include the Y range of
   points on the Pareto line.
 

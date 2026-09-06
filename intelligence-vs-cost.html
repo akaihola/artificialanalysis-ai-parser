@@ -459,9 +459,10 @@ function isChartFullscreen() {
 function syncChartFullscreen() {
   const active = isChartFullscreen();
   chartCard.classList.toggle("fullscreen-fallback", active && !document.fullscreenElement);
-  fullscreenButton.textContent = active ? "Exit full screen" : "Full screen";
+  fullscreenButton.textContent = active ? "⤡" : "⤢";
   fullscreenButton.setAttribute("aria-pressed", String(active));
   fullscreenButton.setAttribute("aria-label", active ? "Exit chart full screen" : "Open chart in full screen");
+  fullscreenButton.title = active ? "Exit full screen" : "Open chart in full screen";
   hideTooltip();
   render();
 }
