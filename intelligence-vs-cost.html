@@ -328,7 +328,7 @@ if (Object.hasOwn(METRICS, urlMetric)) state.metric = urlMetric;
 if (isFinite(urlMaxE2e) && urlMaxE2e > 0) state.maxE2e = urlMaxE2e;
 
 const fmt$ = (v) => v >= 1 ? "$" + v.toFixed(2) : "$" + Number(v.toPrecision(2));
-const fmtS = (v) => v.toFixed(v < 10 ? 1 : 0) + " s";
+const fmtS = (v) => v == null ? "—" : v.toFixed(v < 10 ? 1 : 0) + " s";
 const fmtScore = (v) => v == null ? "—" : v.toFixed(1);
 const planForModel = (m) => m.provider === "Anthropic" ? state.plans.claude :
   m.provider === "OpenAI" ? state.plans.codex : null;
@@ -355,9 +355,9 @@ fetch("models.json")
   .then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
   .then((all) => {
     state.models = all.filter((m) =>
-      m.cost_per_task != null && m.e2e_response_time_s != null &&
+      m.cost_per_task != null &&
       Object.keys(METRICS).some((k) => m[k] != null));
-    const times = state.models.map((m) => m.e2e_response_time_s);
+    const times = state.models.map((m) => m.e2e_response_time_s).filter((v) => v != null);
     state.logMin = Math.max(1, Math.floor(Math.min(...times)));
     state.logMax = Math.ceil(Math.max(...times));
     document.getElementById("e2e-number").min = state.logMin;
@@ -497,8 +497,8 @@ function render() {
   const base = state.models.filter((m) => state.showDeprecated || !m.deprecated);
   const pool = base.filter((m) => m[metric] != null);
   const noScore = base.length - pool.length;
-  const shown = pool.filter((m) => m.e2e_response_time_s <= state.maxE2e);
-  const hidden = pool.filter((m) => m.e2e_response_time_s > state.maxE2e);
+  const shown = pool.filter((m) => state.maxE2e === Infinity || m.e2e_response_time_s == null || m.e2e_response_time_s <= state.maxE2e);
+  const hidden = pool.filter((m) => m.e2e_response_time_s != null && m.e2e_response_time_s > state.maxE2e);
   const front = paretoFront(shown, metric);
   const frontSet = new Set(front);
 
@@ -656,7 +656,7 @@ function renderTable(shown, frontSet) {
       <td class="num">${fmtScore(m.coding_index)}</td>
       <td class="num">${fmtScore(m.math_index)}</td>
       <td class="num" title="API: ${m.cost_per_task.toFixed(3)}">${effectiveCost(m).toFixed(3)}</td>
-      <td class="num">${m.e2e_response_time_s.toFixed(1)}</td>
+      <td class="num">${fmtS(m.e2e_response_time_s)}</td>
       <td>${frontSet.has(m) ? "Yes" : ""}</td>
     </tr>`).join("");
 }
