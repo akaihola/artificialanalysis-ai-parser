@@ -96,7 +96,7 @@ def extract_rows(raw):
 
 
 def extract_model_indexes(raw):
-    """Extract per-model SciCode and Agentic scores from the models stream.
+    """Extract SciCode, Terminal-Bench v4.0 and Agentic scores by model slug.
 
     SciCode replaces the Coding Index missing from the current feed.
     This function finds all "models" JSON arrays in the stream and maps
@@ -119,9 +119,10 @@ def extract_model_indexes(raw):
             if not isinstance(m, dict) or not m.get("slug"):
                 continue
             entry = indexes.setdefault(m["slug"], {})
-            score = m.get("scicode")
-            if type(score) in (int, float) and 0 <= score <= 1:
-                entry["scicode"] = score
+            for key in ("scicode", "terminalbenchV40"):
+                score = m.get(key)
+                if type(score) in (int, float) and 0 <= score <= 1:
+                    entry[key] = score
             if isinstance(m.get("agenticIndex"), (int, float)):
                 entry["agenticIndex"] = m["agenticIndex"]
     return indexes
@@ -182,6 +183,7 @@ def clean_model(entry, indexes=None):
     `indexes` maps a model slug to scores from the models leaderboard
     (see extract_model_indexes). coding_index holds SciCode scaled to
     0-100, replacing the composite Coding Index missing from the feed.
+    terminalbench_v4_0 holds Terminal-Bench v4.0 scaled to 0-100.
 
     The site does not publish a Math Index anymore. As a stand-in,
     math_index holds the AIME 2025 math contest score (0-100). It is
@@ -201,6 +203,7 @@ def clean_model(entry, indexes=None):
     e2e_s = value_or_none(perf.get("medianEndToEndResponseTimeSeconds"))
     model_indexes = (indexes or {}).get(model.get("slug"), {})
     scicode = model_indexes.get("scicode")
+    terminalbench = model_indexes.get("terminalbenchV40")
     aime25 = value_or_none(model.get("aime25"))
 
     return {
@@ -210,6 +213,7 @@ def clean_model(entry, indexes=None):
         "slug": model.get("slug", ""),
         "intelligence_index": value_or_none(model.get("intelligenceIndex")),
         "coding_index": scicode * 100 if scicode is not None else None,
+        "terminalbench_v4_0": terminalbench * 100 if terminalbench is not None else None,
         "math_index": aime25 * 100 if aime25 is not None else None,
         "agentic_index": model_indexes.get("agenticIndex"),
         "cost_per_task": value_or_none(pricing.get("costPerTask")),
@@ -233,7 +237,7 @@ def compress_for_calculator(models):
     """Return minimal fields needed by the aiprice.html calculator."""
     keep = [
         "name", "creator", "provider", "slug",
-        "intelligence_index", "coding_index", "math_index",
+        "intelligence_index", "coding_index", "math_index", "terminalbench_v4_0",
         "cost_per_task",
         "price_1m_input_tokens", "price_1m_output_tokens", "price_1m_cache_hit",
         "blended_price_3_1", "context_window_tokens",
@@ -275,7 +279,7 @@ def main():
     deduped = deduplicate_models(entries)
     print(f"Deduplicated to {len(deduped)} unique models")
 
-    # Step 4: Get SciCode and Agentic scores from the models leaderboard.
+    # Step 4: Get benchmark scores from the models leaderboard.
     if args.models_file:
         with open(args.models_file, "rb") as f:
             models_raw = f.read()

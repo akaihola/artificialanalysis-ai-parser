@@ -185,10 +185,11 @@
     <select id="claude-plan-select" aria-label="Claude subscription plan"></select>
     <label for="codex-plan-select">Codex plan</label>
     <select id="codex-plan-select" aria-label="Codex subscription plan"></select>
-    <div role="radiogroup" aria-label="Score on the Y axis" style="display:flex; gap:14px;">
+    <div role="radiogroup" aria-label="Score on the Y axis" style="display:flex; flex-wrap:wrap; gap:14px;">
       <label><input type="radio" name="metric" value="intelligence_index" checked> Intelligence</label>
       <label><input type="radio" name="metric" value="coding_index"> Coding (SciCode)</label>
       <label><input type="radio" name="metric" value="math_index"> Math (AIME 2025)</label>
+      <label><input type="radio" name="metric" value="terminalbench_v4_0"> Terminal-Bench v4.0</label>
     </div>
     <div class="grow">
       <label for="e2e-slider">Max response time</label>
@@ -231,6 +232,7 @@
           <th class="num">Intelligence</th>
           <th class="num">Coding (SciCode)</th>
           <th class="num">Math</th>
+          <th class="num">Terminal-Bench v4.0</th>
           <th class="num">Effective cost per task ($)</th>
           <th class="num">Response time (s)</th>
           <th>Pareto</th>
@@ -247,7 +249,7 @@
       right multiplies the effective cost by ten. Subscription prices are
       estimates assuming you fully drain the allowance over a long window, not
       provider invoices.</p>
-    <p>The Y axis shows one of three scores. Use the buttons in the filter row
+    <p>The Y axis shows one of four scores. Use the buttons in the filter row
       to pick one. A higher value is better on all of them.</p>
     <ul>
       <li><strong>Intelligence</strong> — the Artificial Analysis Intelligence
@@ -260,6 +262,12 @@
         contest, from 0 to 100. Artificial Analysis removed its old Math Index,
         so this contest score is the stand-in. Only some models have it, so
         this view shows fewer points.</li>
+      <li><strong>Terminal-Bench v4.0</strong> — the
+        <a href="https://artificialanalysis.ai/evaluations/terminalbench-v4-0">terminal task benchmark</a>
+        score, scaled from 0 to 100. Only models with scores appear. The cost
+        axis and response time filter still use the existing Intelligence Index
+        task costs and response-time measurements, not Terminal-Bench task
+        costs or durations.</li>
     </ul>
     <p>The blue line is the Pareto line. A model is on this line when no other
       shown model is both smarter and cheaper. These models give you the best
@@ -292,11 +300,12 @@ document.getElementById("theme-toggle").addEventListener("click", () => {
 });
 
 /* ---------- state ---------- */
-// The Y axis can show one of three scores.
+// The Y axis can show one of four scores.
 const METRICS = {
   intelligence_index: { name: "intelligence score", axis: "Artificial Analysis Intelligence Index" },
   coding_index: { name: "SciCode score", axis: "Coding (SciCode, 0–100)" },
   math_index: { name: "math score", axis: "AIME 2025 math contest score (0–100)" },
+  terminalbench_v4_0: { name: "Terminal-Bench v4.0 score", axis: "Terminal-Bench v4.0 (0–100)" },
 };
 
 // Estimates assume the subscription allowance is fully drained over a long window.
@@ -539,8 +548,8 @@ function render() {
   const scores = state.models.filter((m) => m[metric] != null).map((m) => m[metric]);
   const yScores = state.paretoYZoom && front.length ? front.map((m) => m[metric]) : scores;
   const xMin = Math.min(...costs) * 0.8, xMax = Math.max(...costs) * 1.25;
-  const yMin = Math.max(0, Math.floor((Math.min(...yScores) - 4) / 10) * 10);
-  const yMax = Math.ceil((Math.max(...yScores) + 2) / 10) * 10;
+  const yMin = yScores.length ? Math.max(0, Math.floor((Math.min(...yScores) - 4) / 10) * 10) : 0;
+  const yMax = yScores.length ? Math.ceil((Math.max(...yScores) + 2) / 10) * 10 : 100;
 
   const fullscreen = isChartFullscreen();
   const W = fullscreen
@@ -649,6 +658,7 @@ function showTooltip(m, circle) {
       <tr><td>Intelligence Index</td><td>${fmtScore(m.intelligence_index)}</td></tr>
       <tr><td>Coding (SciCode)</td><td>${fmtScore(m.coding_index)}</td></tr>
       <tr><td>Math (AIME 2025)</td><td>${fmtScore(m.math_index)}</td></tr>
+      <tr><td>Terminal-Bench v4.0</td><td>${fmtScore(m.terminalbench_v4_0)}</td></tr>
       <tr><td>${esc(costLabel(m))} cost per task</td><td>${fmt$(cost)}</td></tr>
       ${cost !== m.cost_per_task ? `<tr><td>API cost per task</td><td>${fmt$(m.cost_per_task)}</td></tr>` : ""}
       <tr><td>Response time</td><td>${fmtS(m.e2e_response_time_s)}</td></tr>
@@ -679,6 +689,7 @@ function renderTable(shown, frontSet) {
       <td class="num">${fmtScore(m.intelligence_index)}</td>
       <td class="num">${fmtScore(m.coding_index)}</td>
       <td class="num">${fmtScore(m.math_index)}</td>
+      <td class="num">${fmtScore(m.terminalbench_v4_0)}</td>
       <td class="num" title="API: ${m.cost_per_task.toFixed(3)}">${effectiveCost(m).toFixed(3)}</td>
       <td class="num">${fmtS(m.e2e_response_time_s)}</td>
       <td>${frontSet.has(m) ? "Yes" : ""}</td>
