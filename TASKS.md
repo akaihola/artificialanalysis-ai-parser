@@ -4,9 +4,6 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 ## Ordered backlog
 
-- Add a toggle for zooming the chart vertically to only include the Y range of
-  points on the Pareto line.
-
 ## In progress
 
 - [*] Add Pareto chart Y-axis zoom
