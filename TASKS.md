@@ -6,9 +6,9 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 ## In progress
 
-- [*] Add Terminal-Bench v4.0 as a selectable benchmark
-
 ## Completed
+
+- [*] Add Terminal-Bench v4.0 as a selectable benchmark
 
 - [*] Restore the Coding Pareto graph and table with SciCode
 
