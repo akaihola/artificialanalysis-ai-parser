@@ -187,7 +187,7 @@
     <select id="codex-plan-select" aria-label="Codex subscription plan"></select>
     <div role="radiogroup" aria-label="Score on the Y axis" style="display:flex; gap:14px;">
       <label><input type="radio" name="metric" value="intelligence_index" checked> Intelligence</label>
-      <label><input type="radio" name="metric" value="coding_index"> Coding</label>
+      <label><input type="radio" name="metric" value="coding_index"> Coding (SciCode)</label>
       <label><input type="radio" name="metric" value="math_index"> Math (AIME 2025)</label>
     </div>
     <div class="grow">
@@ -229,7 +229,7 @@
         <tr>
           <th>Model</th><th>Creator</th><th>Provider</th>
           <th class="num">Intelligence</th>
-          <th class="num">Coding</th>
+          <th class="num">Coding (SciCode)</th>
           <th class="num">Math</th>
           <th class="num">Effective cost per task ($)</th>
           <th class="num">Response time (s)</th>
@@ -252,8 +252,10 @@
     <ul>
       <li><strong>Intelligence</strong> — the Artificial Analysis Intelligence
         Index, a mix of many benchmarks.</li>
-      <li><strong>Coding</strong> — the Artificial Analysis Coding Index, from
-        code benchmarks.</li>
+      <li><strong>Coding (SciCode)</strong> — the SciCode benchmark score,
+        scaled from 0 to 100. This project uses SciCode because the models
+        feed no longer supplies the former Coding Index. The scores are not
+        comparable to that index. Only models with SciCode scores appear.</li>
       <li><strong>Math (AIME 2025)</strong> — the score on the AIME 2025 math
         contest, from 0 to 100. Artificial Analysis removed its old Math Index,
         so this contest score is the stand-in. Only some models have it, so
@@ -293,7 +295,7 @@ document.getElementById("theme-toggle").addEventListener("click", () => {
 // The Y axis can show one of three scores.
 const METRICS = {
   intelligence_index: { name: "intelligence score", axis: "Artificial Analysis Intelligence Index" },
-  coding_index: { name: "coding score", axis: "Artificial Analysis Coding Index" },
+  coding_index: { name: "SciCode score", axis: "Coding (SciCode, 0–100)" },
   math_index: { name: "math score", axis: "AIME 2025 math contest score (0–100)" },
 };
 
@@ -645,7 +647,7 @@ function showTooltip(m, circle) {
     `<span style="color:var(--text-secondary)">${esc(m.creator)} · via ${esc(m.provider)}</span>` +
     `<table>
       <tr><td>Intelligence Index</td><td>${fmtScore(m.intelligence_index)}</td></tr>
-      <tr><td>Coding Index</td><td>${fmtScore(m.coding_index)}</td></tr>
+      <tr><td>Coding (SciCode)</td><td>${fmtScore(m.coding_index)}</td></tr>
       <tr><td>Math (AIME 2025)</td><td>${fmtScore(m.math_index)}</td></tr>
       <tr><td>${esc(costLabel(m))} cost per task</td><td>${fmt$(cost)}</td></tr>
       ${cost !== m.cost_per_task ? `<tr><td>API cost per task</td><td>${fmt$(m.cost_per_task)}</td></tr>` : ""}

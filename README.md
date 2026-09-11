@@ -57,7 +57,7 @@ Each entry:
 | `provider` | The API host that the numbers come from |
 | `slug` | URL-friendly identifier |
 | `intelligence_index` | AA Intelligence Index score |
-| `coding_index` | AA Coding Index, joined from the models leaderboard |
+| `coding_index` | SciCode score scaled to 0–100, joined from the models leaderboard |
 | `math_index` | AIME 2025 math contest score (0–100). The site removed its Math Index, so this is the stand-in |
 | `cost_per_task` | Cost to run one task of the AA Intelligence Index suite (USD) |
 | `price_1m_input_tokens` | Input price per 1M tokens (USD) |
@@ -109,7 +109,14 @@ The RSC endpoint requires specific headers (`rsc: 1`, `next-router-state-tree`, 
 
 `intelligence-vs-cost.html` replicates the scatter plot from the [artificialanalysis.ai](https://artificialanalysis.ai/) home page. Each point is one AI model. The X axis shows the cost to run one benchmark task (USD, log scale). The Y axis shows the AA Intelligence Index. A blue step line marks the Pareto frontier: the models that give the most intelligence for the money.
 
-The Y axis can show one of three scores: the Intelligence Index, the Coding Index, or the AIME 2025 math contest score. Use the radio buttons in the filter row to switch. The Pareto line follows the selected score.
+The Y axis can show one of three scores: the Intelligence Index, SciCode, or the AIME 2025 math contest score. Use the radio buttons in the filter row to switch. The Pareto line follows the selected score.
+
+Coding uses SciCode scaled to 0–100 because the models feed no longer supplies
+the former composite Coding Index. These scores are not historically comparable.
+Only models with SciCode scores appear in the Coding view. The `coding_index`
+JSON key and `?metric=coding_index` link remain supported. The cost axis still
+uses Intelligence Index task costs. A refresh with no chart-eligible SciCode
+scores fails before replacing `models.json`, preserving the last usable data.
 
 The page adds one filter that the original site does not have: **maximum end-to-end response time**. Reasoning models can think for minutes before they answer. Move the slider to hide models that are slower than your limit. The page then computes the Pareto line again from the models that remain. This shows you the best value models that are also fast enough for your use case.
 

@@ -10,13 +10,13 @@ Usage:
     python3 fetch_aa.py --minimal          # only fields needed for calculator
 """
 
-import json
-import sys
-import os
 import argparse
-import time
-from urllib.request import Request, urlopen
+import json
+import math
+import os
+import sys
 from urllib.error import URLError
+from urllib.request import Request, urlopen
 
 RSC_URL = "https://artificialanalysis.ai/leaderboards/providers?_rsc=hgvan"
 MODELS_RSC_URL = "https://artificialanalysis.ai/leaderboards/models?_rsc=hgvan"
@@ -96,12 +96,11 @@ def extract_rows(raw):
 
 
 def extract_model_indexes(raw):
-    """Extract per-model index scores from the models leaderboard stream.
+    """Extract per-model SciCode and Agentic scores from the models stream.
 
-    The provider leaderboard does not publish the Coding Index or the
-    Agentic Index. The models leaderboard does. This function finds all
-    "models" JSON arrays in the stream. It returns a dict that maps a
-    model slug to its index scores. It keeps only numeric values.
+    SciCode replaces the Coding Index missing from the current feed.
+    This function finds all "models" JSON arrays in the stream and maps
+    model slugs to numeric scores.
     """
     text = raw.decode("utf-8", errors="replace")
     indexes = {}
@@ -120,9 +119,11 @@ def extract_model_indexes(raw):
             if not isinstance(m, dict) or not m.get("slug"):
                 continue
             entry = indexes.setdefault(m["slug"], {})
-            for key in ("codingIndex", "agenticIndex"):
-                if isinstance(m.get(key), (int, float)):
-                    entry[key] = m[key]
+            score = m.get("scicode")
+            if type(score) in (int, float) and 0 <= score <= 1:
+                entry["scicode"] = score
+            if isinstance(m.get("agenticIndex"), (int, float)):
+                entry["agenticIndex"] = m["agenticIndex"]
     return indexes
 
 
@@ -179,8 +180,8 @@ def clean_model(entry, indexes=None):
     """Extract clean model data from a raw entry.
 
     `indexes` maps a model slug to scores from the models leaderboard
-    (see extract_model_indexes). The provider data alone does not
-    contain the Coding Index.
+    (see extract_model_indexes). coding_index holds SciCode scaled to
+    0-100, replacing the composite Coding Index missing from the feed.
 
     The site does not publish a Math Index anymore. As a stand-in,
     math_index holds the AIME 2025 math contest score (0-100). It is
@@ -199,6 +200,7 @@ def clean_model(entry, indexes=None):
     ttft_s = value_or_none(perf.get("medianTimeToFirstTokenSeconds"))
     e2e_s = value_or_none(perf.get("medianEndToEndResponseTimeSeconds"))
     model_indexes = (indexes or {}).get(model.get("slug"), {})
+    scicode = model_indexes.get("scicode")
     aime25 = value_or_none(model.get("aime25"))
 
     return {
@@ -207,7 +209,7 @@ def clean_model(entry, indexes=None):
         "provider": host.get("name", "?"),
         "slug": model.get("slug", ""),
         "intelligence_index": value_or_none(model.get("intelligenceIndex")),
-        "coding_index": model_indexes.get("codingIndex"),
+        "coding_index": scicode * 100 if scicode is not None else None,
         "math_index": aime25 * 100 if aime25 is not None else None,
         "agentic_index": model_indexes.get("agenticIndex"),
         "cost_per_task": value_or_none(pricing.get("costPerTask")),
@@ -273,8 +275,7 @@ def main():
     deduped = deduplicate_models(entries)
     print(f"Deduplicated to {len(deduped)} unique models")
 
-    # Step 4: Get Coding and Agentic Index scores from the models leaderboard.
-    # The parser can work without them. The fields are then None.
+    # Step 4: Get SciCode and Agentic scores from the models leaderboard.
     if args.models_file:
         with open(args.models_file, "rb") as f:
             models_raw = f.read()
@@ -282,7 +283,7 @@ def main():
     else:
         models_raw = fetch_rsc(MODELS_RSC_URL)
     indexes = extract_model_indexes(models_raw) if models_raw else {}
-    print(f"Index scores for {len(indexes)} models from the models leaderboard")
+    print(f"SciCode scores for {sum('scicode' in m for m in indexes.values())} models from the models leaderboard")
 
     # Step 5: Clean
     models = [clean_model(e, indexes) for e in deduped]
@@ -290,6 +291,17 @@ def main():
     # Remove entries without pricing
     models_with_price = [m for m in models if m["price_1m_input_tokens"] and m["price_1m_output_tokens"]]
     print(f"Models with pricing: {len(models_with_price)}")
+
+    # Preserve the last usable dataset when the score feed or slug join breaks.
+    if not any(
+        not m["deprecated"] and m["coding_index"] is not None
+        and type(m["cost_per_task"]) in (int, float)
+        and math.isfinite(m["cost_per_task"]) and m["cost_per_task"] > 0
+        for m in models_with_price
+    ):
+        print("Error: no chart-eligible SciCode scores; check the models leaderboard "
+              "download, scicode field, and slug joins. Output left unchanged.")
+        sys.exit(1)
 
     # Sort by intelligence index descending
     models_with_price.sort(key=lambda m: m["intelligence_index"] or 0, reverse=True)
