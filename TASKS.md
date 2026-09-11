@@ -4,6 +4,8 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 ## Ordered backlog
 
+- [*] Add Terminal-Bench v4.0 as a selectable benchmark
+
 ## In progress
 
 ## Completed
