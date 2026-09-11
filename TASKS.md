@@ -9,11 +9,11 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 ## In progress
 
-- [*] Restore the Coding Pareto graph and table with SciCode
-
 - [*] Add Pareto chart Y-axis zoom
 
 ## Completed
+
+- [*] Restore the Coding Pareto graph and table with SciCode
 
 - [*] Move the Full screen button to the chart top-right, include filters in
   full-screen mode, and use the full window height
