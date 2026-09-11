@@ -9,6 +9,8 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 ## In progress
 
+- [*] Restore the Coding Pareto graph and table with SciCode
+
 - [*] Add Pareto chart Y-axis zoom
 
 ## Completed
