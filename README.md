@@ -58,6 +58,7 @@ Each entry:
 | `slug` | URL-friendly identifier |
 | `intelligence_index` | AA Intelligence Index score |
 | `coding_index` | SciCode score scaled to 0–100, joined from the models leaderboard |
+| `terminalbench_v4_0` | Terminal-Bench v4.0 score scaled to 0–100, joined from the models leaderboard; null when unavailable |
 | `math_index` | AIME 2025 math contest score (0–100). The site removed its Math Index, so this is the stand-in |
 | `cost_per_task` | Cost to run one task of the AA Intelligence Index suite (USD) |
 | `price_1m_input_tokens` | Input price per 1M tokens (USD) |
@@ -109,7 +110,7 @@ The RSC endpoint requires specific headers (`rsc: 1`, `next-router-state-tree`, 
 
 `intelligence-vs-cost.html` replicates the scatter plot from the [artificialanalysis.ai](https://artificialanalysis.ai/) home page. Each point is one AI model. The X axis shows the cost to run one benchmark task (USD, log scale). The Y axis shows the AA Intelligence Index. A blue step line marks the Pareto frontier: the models that give the most intelligence for the money.
 
-The Y axis can show one of three scores: the Intelligence Index, SciCode, or the AIME 2025 math contest score. Use the radio buttons in the filter row to switch. The Pareto line follows the selected score.
+The Y axis can show one of four scores: the Intelligence Index, SciCode, the AIME 2025 math contest score, or Terminal-Bench v4.0. Use the radio buttons in the filter row to switch. The Pareto line follows the selected score.
 
 Coding uses SciCode scaled to 0–100 because the models feed no longer supplies
 the former composite Coding Index. These scores are not historically comparable.
@@ -117,6 +118,16 @@ Only models with SciCode scores appear in the Coding view. The `coding_index`
 JSON key and `?metric=coding_index` link remain supported. The cost axis still
 uses Intelligence Index task costs. A refresh with no chart-eligible SciCode
 scores fails before replacing `models.json`, preserving the last usable data.
+
+[Terminal-Bench v4.0](https://artificialanalysis.ai/evaluations/terminalbench-v4-0)
+scores are downloadable in the existing models leaderboard RSC feed as
+`terminalbenchV40`. The parser joins by exact model slug and scales fractions to
+0–100. Zero is a valid score; missing scores are null and excluded from this
+view. Select it with the radio button or `?metric=terminalbench_v4_0`.
+The cost axis still uses Intelligence Index task costs, including any selected
+subscription estimate. The response time filter uses the existing response-time
+measurements, not Terminal-Bench task durations. This is internal page data,
+not a supported CSV export or public API contract.
 
 The page adds one filter that the original site does not have: **maximum end-to-end response time**. Reasoning models can think for minutes before they answer. Move the slider to hide models that are slower than your limit. The page then computes the Pareto line again from the models that remain. This shows you the best value models that are also fast enough for your use case.
 
