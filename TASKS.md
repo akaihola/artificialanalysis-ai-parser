@@ -9,11 +9,11 @@ Rules for TASKS.md usage are at the bottom of the file.
   `~/.kandev/tasks/research-to-find-oth_ayocnvb3/artificialanalysis-ai-parser/docs/coding-benchmark-research.md`.
   Prefer Astra or Fable (Medium) for this task.
 
+## Scheduled
+
 - [*] Add provider and model selectors. The user needs to be able to clear all
   selections and then toggle visibility of individual models (all reasoning levels) or
   all models from a provider.
-
-## Scheduled
 
 ## In progress
 
