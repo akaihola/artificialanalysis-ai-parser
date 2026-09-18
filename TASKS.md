@@ -4,6 +4,14 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 ## Ordered backlog
 
+- [*] The empty chart and table for Terminal-Bench v4.0 come from a renamed upstream
+  field. The live [models feed](https://artificialanalysis.ai/leaderboards/models) now
+  uses `terminalBench40`;
+  [our parser](https://gogo.crane-boa.ts.net:8449/home/agent/.kandev/tasks/why-is-the-terminal_b99btn94/artificialanalysis-ai-parser/artificialanalysis.ai-parser.py:124)
+  expects `terminalbenchV40`. Consequently, all 410 models have
+  `terminalbench_v4_0: null`, and both views exclude them. The refresh validation only
+  checks SciCode, so this failure passes unnoticed. Fix the parser.
+
 ## In progress
 
 ## Completed
