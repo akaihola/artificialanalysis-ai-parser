@@ -4,12 +4,12 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 ## Ordered backlog
 
+## Scheduled
+
 - [*] Include more coding benchmarks based on [our coding benchmark research]. Note that
   the research may still be unmerged, living in
   `~/.kandev/tasks/research-to-find-oth_ayocnvb3/artificialanalysis-ai-parser/docs/coding-benchmark-research.md`.
   Prefer Astra or Fable (Medium) for this task.
-
-## Scheduled
 
 ## In progress
 
