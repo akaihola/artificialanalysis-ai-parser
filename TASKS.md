@@ -4,6 +4,11 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 ## Ordered backlog
 
+- [*] Include more coding benchmarks based on [our coding benchmark research]. Note that
+  the research may still be unmerged, living in
+  `~/.kandev/tasks/research-to-find-oth_ayocnvb3/artificialanalysis-ai-parser/docs/coding-benchmark-research.md`.
+  Prefer Astra or Fable (Medium) for this task.
+
 ## Scheduled
 
 - [*] The empty chart and table for Terminal-Bench v4.0 come from a renamed upstream
@@ -32,6 +37,7 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 - [*] Add Pareto chart Y-axis zoom
 
+[our coding benchmark research]: docs/coding-benchmark-research.md
 [*]: TASKS.md
 
 ---
