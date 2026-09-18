@@ -1,0 +1,9 @@
+model,code_generation,code_completion,javascript,typescript,python
+gpt-5.6-sol-max,83.099,84.783,63.636,50.0,55.0
+gpt-5.6-terra-max,76.056,80.435,68.182,46.667,50.0
+gpt-5.6-luna-max,78.873,86.957,63.636,36.667,45.0
+glm-5.3,77.465,80.435,72.727,50.0,60.0
+claude-fable-5-1-max-effort,90.141,82.609,68.182,60.0,70.0
+gemini-3.8-flash-high,73.239,71.739,72.727,40.0,50.0
+gpt-6-astra-max,80.282,80.435,63.636,43.333,65.0
+deepseek-v4.1-flash-max,77.465,82.609,81.818,60.0,90.0

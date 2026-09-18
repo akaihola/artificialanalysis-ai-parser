@@ -195,6 +195,8 @@
       <label><input type="radio" name="metric" value="coding_index"> Coding (SciCode)</label>
       <label><input type="radio" name="metric" value="math_index"> Math (AIME 2025)</label>
       <label><input type="radio" name="metric" value="terminalbench_v4_0"> Terminal-Bench v4.0</label>
+      <label><input type="radio" name="metric" value="livebench_coding"> LiveBench Coding</label>
+      <label><input type="radio" name="metric" value="livebench_agentic_coding"> LiveBench Agentic Coding</label>
     </div>
     <div class="grow">
       <label for="e2e-slider">Max response time</label>
@@ -240,6 +242,8 @@
           <th class="num">Coding (SciCode)</th>
           <th class="num">Math</th>
           <th class="num">Terminal-Bench v4.0</th>
+          <th class="num">LiveBench Coding</th>
+          <th class="num">LiveBench Agentic Coding</th>
           <th class="num">Effective cost per task ($)</th>
           <th class="num">Response time (s)</th>
           <th>Pareto</th>
@@ -256,7 +260,7 @@
       right multiplies the effective cost by ten. Subscription prices are
       estimates assuming you fully drain the allowance over a long window, not
       provider invoices.</p>
-    <p>The Y axis shows one of four scores. Use the buttons in the filter row
+    <p>The Y axis shows one of six scores. Use the buttons in the filter row
       to pick one. A higher value is better on all of them.</p>
     <ul>
       <li><strong>Intelligence</strong> — the Artificial Analysis Intelligence
@@ -275,6 +279,14 @@
         axis and response time filter still use the existing Intelligence Index
         task costs and response-time measurements, not Terminal-Bench task
         costs or durations.</li>
+      <li><strong>LiveBench Coding and Agentic Coding</strong> use the
+        <a href="https://livebench.ai/">official LiveBench</a> release 2026_06_25,
+        on a 0–100 scale. Coding averages code generation and completion;
+        Agentic Coding averages JavaScript, TypeScript, and Python evaluations.
+        Missing subtasks are skipped; score details show how many were completed.
+        Only reviewed model-and-effort matches appear. The cost axis uses AA
+        Intelligence Index task costs with the selected subscription adjustment,
+        and the time filter uses AA response times, not LiveBench costs or durations.</li>
     </ul>
     <p>The blue line is the Pareto line. A model is on this line when no other
       shown model is both smarter and cheaper. These models give you the best
@@ -307,12 +319,14 @@ document.getElementById("theme-toggle").addEventListener("click", () => {
 });
 
 /* ---------- state ---------- */
-// The Y axis can show one of four scores.
+// The Y axis can show one of six scores.
 const METRICS = {
   intelligence_index: { name: "intelligence score", axis: "Artificial Analysis Intelligence Index" },
   coding_index: { name: "SciCode score", axis: "Coding (SciCode, 0–100)" },
   math_index: { name: "math score", axis: "AIME 2025 math contest score (0–100)" },
   terminalbench_v4_0: { name: "Terminal-Bench v4.0 score", axis: "Terminal-Bench v4.0 (0–100)" },
+  livebench_coding: { name: "LiveBench Coding score", axis: "LiveBench Coding (0–100)" },
+  livebench_agentic_coding: { name: "LiveBench Agentic Coding score", axis: "LiveBench Agentic Coding (0–100)" },
 };
 
 // Estimates assume the subscription allowance is fully drained over a long window.
@@ -587,6 +601,7 @@ function render() {
   if (!state.models.length) return;
 
   const metric = state.metric;
+  svg.setAttribute("aria-label", `${METRICS[metric].name} against AA Intelligence Index cost per task`);
   const base = state.models.filter((m) =>
     state.selectedModels.has(modelKey(m.provider, baseModelName(m))) &&
     (state.showDeprecated || !m.deprecated));
@@ -648,7 +663,7 @@ function render() {
   // Axis lines and titles.
   parts.push(`<line x1="${pad.left}" x2="${W - pad.right}" y1="${H - pad.bottom}" y2="${H - pad.bottom}" stroke="var(--axis)" stroke-width="1"/>`);
   parts.push(`<line x1="${pad.left}" x2="${pad.left}" y1="${pad.top}" y2="${H - pad.bottom}" stroke="var(--axis)" stroke-width="1"/>`);
-  parts.push(`<text x="${(pad.left + W - pad.right) / 2}" y="${H - 12}" text-anchor="middle" font-size="12" fill="var(--text-secondary)">Effective cost per task (USD, log scale)</text>`);
+  parts.push(`<text x="${(pad.left + W - pad.right) / 2}" y="${H - 12}" text-anchor="middle" font-size="12" fill="var(--text-secondary)">AA Intelligence Index cost per task (USD, log scale)</text>`);
   parts.push(`<text x="14" y="${(pad.top + H - pad.bottom) / 2}" text-anchor="middle" font-size="12" fill="var(--text-secondary)" transform="rotate(-90 14 ${(pad.top + H - pad.bottom) / 2})">${METRICS[metric].axis}</text>`);
 
   // Models hidden by the filter: faint ghosts, no tooltip.
@@ -713,6 +728,14 @@ function esc(s) {
   return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
 }
 
+function livebenchScore(m, metric) {
+  const score = fmtScore(m[metric]);
+  const meta = m.livebench, count = meta?.subtasks?.[metric];
+  if (!count || m[metric] == null) return score;
+  const detail = `${meta.release} · ${meta.source_model} · ${count.completed}/${count.expected} subtasks`;
+  return `${score}<br><small>${esc(detail)}</small>`;
+}
+
 function showTooltip(m, circle) {
   const cost = effectiveCost(m);
   tooltip.innerHTML =
@@ -723,6 +746,8 @@ function showTooltip(m, circle) {
       <tr><td>Coding (SciCode)</td><td>${fmtScore(m.coding_index)}</td></tr>
       <tr><td>Math (AIME 2025)</td><td>${fmtScore(m.math_index)}</td></tr>
       <tr><td>Terminal-Bench v4.0</td><td>${fmtScore(m.terminalbench_v4_0)}</td></tr>
+      <tr><td>LiveBench Coding</td><td>${livebenchScore(m, "livebench_coding")}</td></tr>
+      <tr><td>LiveBench Agentic Coding</td><td>${livebenchScore(m, "livebench_agentic_coding")}</td></tr>
       <tr><td>${esc(costLabel(m))} cost per task</td><td>${fmt$(cost)}</td></tr>
       ${cost !== m.cost_per_task ? `<tr><td>API cost per task</td><td>${fmt$(m.cost_per_task)}</td></tr>` : ""}
       <tr><td>Response time</td><td>${fmtS(m.e2e_response_time_s)}</td></tr>
@@ -754,6 +779,8 @@ function renderTable(shown, frontSet) {
       <td class="num">${fmtScore(m.coding_index)}</td>
       <td class="num">${fmtScore(m.math_index)}</td>
       <td class="num">${fmtScore(m.terminalbench_v4_0)}</td>
+      <td class="num">${livebenchScore(m, "livebench_coding")}</td>
+      <td class="num">${livebenchScore(m, "livebench_agentic_coding")}</td>
       <td class="num" title="API: ${m.cost_per_task.toFixed(3)}">${effectiveCost(m).toFixed(3)}</td>
       <td class="num">${fmtS(m.e2e_response_time_s)}</td>
       <td>${frontSet.has(m) ? "Yes" : ""}</td>

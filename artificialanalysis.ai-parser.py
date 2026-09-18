@@ -11,10 +11,14 @@ Usage:
 """
 
 import argparse
+import csv
+import io
 import json
 import math
 import os
+import re
 import sys
+from datetime import datetime, timezone
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
@@ -28,6 +32,107 @@ RSC_HEADERS = {
     "next-url": "/leaderboards/models",
     "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
 }
+
+LIVEBENCH_RELEASE = "2026_06_25"
+LIVEBENCH_ROOT = "https://raw.githubusercontent.com/LiveBench/new-livebench"
+LIVEBENCH_CATEGORIES = {
+    "livebench_coding": ("Coding", ["code_generation", "code_completion"]),
+    "livebench_agentic_coding": ("Agentic Coding", ["javascript", "typescript", "python"]),
+}
+# Reviewed against LiveBench modelLinks.js and AA's exact effort-specific slugs.
+# Fable's fallback variants and GLM's unspecified effort are intentionally absent.
+LIVEBENCH_MODELS = {
+    "gpt-6-astra-max": ("gpt-6-astra", "max", None),
+    "gpt-5.6-sol-max": ("gpt-5-6-sol", "max", None),
+    "gpt-5.6-terra-max": ("gpt-5-6-terra", "max", None),
+    "gpt-5.6-luna-max": ("gpt-5-6-luna", "max", None),
+    "gemini-3.8-flash-high": ("gemini-3-8-flash", "high", None),
+    "deepseek-v4.1-flash-max": ("deepseek-v4-1-flash", "max", "2026-09-10"),
+}
+
+
+def fetch_livebench():
+    """Fetch both release files from one commit, without AA's RSC headers."""
+    def download(url):
+        request = Request(url, headers={"User-Agent": "artificialanalysis-ai-parser"})
+        with urlopen(request, timeout=60) as response:
+            return response.read()
+
+    commit = json.loads(download(
+        "https://api.github.com/repos/LiveBench/new-livebench/commits/main"
+    ))["sha"]
+    if not isinstance(commit, str) or not re.fullmatch(r"[0-9a-f]{40}", commit):
+        raise ValueError("invalid LiveBench commit")
+    base = f"{LIVEBENCH_ROOT}/{commit}/public"
+    raw = download(f"{base}/table_{LIVEBENCH_RELEASE}.csv")
+    categories = json.loads(download(f"{base}/categories_{LIVEBENCH_RELEASE}.json"))
+    return raw, categories, {
+        "release": LIVEBENCH_RELEASE, "commit": commit,
+        "retrieved_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def parse_livebench(raw, categories, provenance):
+    """Join only reviewed identities; retain partial evaluation provenance."""
+    if not isinstance(provenance, dict) or provenance.get("release") != LIVEBENCH_RELEASE:
+        raise ValueError("unexpected LiveBench release")
+    commit = provenance.get("commit")
+    if not isinstance(commit, str) or not re.fullmatch(r"[0-9a-f]{40}", commit):
+        raise ValueError("invalid LiveBench commit")
+    retrieved_at = provenance.get("retrieved_at")
+    if not isinstance(retrieved_at, str) or datetime.fromisoformat(retrieved_at).tzinfo is None:
+        raise ValueError("LiveBench retrieval time must include a timezone")
+    for category, columns in LIVEBENCH_CATEGORIES.values():
+        if not isinstance(categories, dict) or categories.get(category) != columns:
+            raise ValueError(f"unexpected LiveBench category: {category}")
+    reader = csv.DictReader(io.StringIO(raw.decode("utf-8-sig")), strict=True)
+    required = {"model"} | {c for _, cols in LIVEBENCH_CATEGORIES.values() for c in cols}
+    headers = reader.fieldnames or []
+    if not required.issubset(headers) or len(headers) != len(set(headers)):
+        raise ValueError("missing or duplicate LiveBench columns")
+    indexes, seen, unmatched = {}, {}, []
+    for row in reader:
+        source_id = row["model"]
+        if not source_id or None in row or any(row[c] is None for c in required):
+            raise ValueError("malformed LiveBench row")
+        if source_id in seen:
+            if row != seen[source_id]:
+                raise ValueError(f"conflicting LiveBench rows: {source_id}")
+            continue
+        seen[source_id] = row
+        scores, counts = {}, {}
+        for metric, (_, columns) in LIVEBENCH_CATEGORIES.items():
+            values = []
+            for column in columns:
+                try:
+                    score = float(row[column])
+                except ValueError:
+                    continue  # Empty and nonnumeric cells are missing evaluations.
+                if not math.isfinite(score) or not 0 <= score <= 100:
+                    raise ValueError(f"invalid LiveBench score: {source_id}/{column}")
+                values.append(score)
+            scores[metric] = sum(values) / len(values) if values else None
+            counts[metric] = {"completed": len(values), "expected": len(columns)}
+        if source_id not in LIVEBENCH_MODELS:
+            unmatched.append(source_id)
+            continue
+        slug, effort, revision = LIVEBENCH_MODELS[source_id]
+        if slug in indexes:
+            raise ValueError(f"conflicting LiveBench mappings: {slug}")
+        indexes[slug] = {
+            **scores,
+            "livebench": {
+                "source_model": source_id, "release": LIVEBENCH_RELEASE,
+                "source_url": f"{LIVEBENCH_ROOT}/{commit}/public/table_{LIVEBENCH_RELEASE}.csv",
+                "commit": commit, "retrieved_at": retrieved_at,
+                "reasoning_effort": effort, "model_revision": revision,
+                "agent": None, "subtasks": counts,
+            },
+        }
+    print(f"LiveBench: {len(indexes)} mapped rows; {len(unmatched)} unreviewed IDs")
+    if unmatched:
+        print("Unmatched LiveBench IDs: " + ", ".join(unmatched))
+    return indexes
 
 
 def fetch_rsc(url=RSC_URL, timeout=60):
@@ -177,7 +282,7 @@ def deduplicate_models(entries):
     return result
 
 
-def clean_model(entry, indexes=None):
+def clean_model(entry, indexes=None, livebench=None):
     """Extract clean model data from a raw entry.
 
     `indexes` maps a model slug to scores from the models leaderboard
@@ -205,6 +310,7 @@ def clean_model(entry, indexes=None):
     scicode = model_indexes.get("scicode")
     terminalbench = model_indexes.get("terminalBench40")
     aime25 = value_or_none(model.get("aime25"))
+    livebench_scores = (livebench or {}).get(model.get("slug"), {})
 
     return {
         "name": entry.get("label", "?"),
@@ -214,6 +320,9 @@ def clean_model(entry, indexes=None):
         "intelligence_index": value_or_none(model.get("intelligenceIndex")),
         "coding_index": scicode * 100 if scicode is not None else None,
         "terminalbench_v4_0": terminalbench * 100 if terminalbench is not None else None,
+        "livebench_coding": livebench_scores.get("livebench_coding"),
+        "livebench_agentic_coding": livebench_scores.get("livebench_agentic_coding"),
+        "livebench": livebench_scores.get("livebench"),
         "math_index": aime25 * 100 if aime25 is not None else None,
         "agentic_index": model_indexes.get("agenticIndex"),
         "cost_per_task": value_or_none(pricing.get("costPerTask")),
@@ -243,6 +352,7 @@ def compress_for_calculator(models):
         "blended_price_3_1", "context_window_tokens",
         "output_tokens_per_second", "time_to_first_token_ms", "e2e_response_time_s",
         "reasoning", "open_weights", "deprecated",
+        "livebench_coding", "livebench_agentic_coding", "livebench",
     ]
     return [{k: m[k] for k in keep} for m in models]
 
@@ -251,10 +361,16 @@ def main():
     parser = argparse.ArgumentParser(description="Fetch AI model data from artificialanalysis.ai")
     parser.add_argument("--file", help="Parse existing RSC dump file (skip download)")
     parser.add_argument("--models-file", help="Parse existing models leaderboard dump file (skip download)")
+    parser.add_argument("--livebench-file", help="Local LiveBench score CSV (requires both companion files)")
+    parser.add_argument("--livebench-categories-file", help="Local LiveBench category JSON")
+    parser.add_argument("--livebench-metadata-file", help="Local JSON with release, commit, retrieved_at")
     parser.add_argument("--out", default="models.json", help="Output JSON file (default: models.json)")
     parser.add_argument("--minimal", action="store_true", help="Output only calculator-essential fields")
     parser.add_argument("--pretty", action="store_true", help="Pretty-print JSON output")
     args = parser.parse_args()
+    local_livebench = [args.livebench_file, args.livebench_categories_file, args.livebench_metadata_file]
+    if any(local_livebench) and not all(local_livebench):
+        parser.error("all three LiveBench file inputs are required for local LiveBench data")
 
     # Step 1: Get raw data
     if args.file:
@@ -289,8 +405,23 @@ def main():
     indexes = extract_model_indexes(models_raw) if models_raw else {}
     print(f"SciCode scores for {sum('scicode' in m for m in indexes.values())} models from the models leaderboard")
 
+    try:
+        if args.livebench_file:
+            with open(args.livebench_file, "rb") as f:
+                livebench_raw = f.read()
+            with open(args.livebench_categories_file, encoding="utf-8") as f:
+                categories = json.load(f)
+            with open(args.livebench_metadata_file, encoding="utf-8") as f:
+                provenance = json.load(f)
+            livebench = parse_livebench(livebench_raw, categories, provenance)
+        else:
+            livebench = parse_livebench(*fetch_livebench())
+    except (OSError, ValueError, KeyError, TypeError, csv.Error) as e:
+        print(f"Error: LiveBench refresh failed: {e}. Output left unchanged.")
+        sys.exit(1)
+
     # Step 5: Clean
-    models = [clean_model(e, indexes) for e in deduped]
+    models = [clean_model(e, indexes, livebench) for e in deduped]
 
     # Remove entries without pricing
     models_with_price = [m for m in models if m["price_1m_input_tokens"] and m["price_1m_output_tokens"]]
@@ -310,6 +441,25 @@ def main():
         print("Error: no chart-eligible SciCode scores; check the models leaderboard "
               "download, scicode field, and slug joins. Output left unchanged.")
         sys.exit(1)
+
+    for metric in LIVEBENCH_CATEGORIES:
+        coverage = {}
+        for m in models_with_price:
+            if m[metric] is None:
+                continue
+            counts = coverage.setdefault(m["provider"], [0, 0])
+            counts[0] += 1
+            if (not m["deprecated"] and math.isfinite(m[metric])
+                    and type(m["cost_per_task"]) in (int, float)
+                    and math.isfinite(m["cost_per_task"]) and m["cost_per_task"] > 0):
+                counts[1] += 1
+        print(f"{metric} matched/eligible by provider: {coverage}")
+        if not any(eligible for _, eligible in coverage.values()):
+            print(f"Error: no chart-eligible {metric} scores. Output left unchanged.")
+            sys.exit(1)
+    missing_slugs = livebench.keys() - {m["slug"] for m in models_with_price}
+    if missing_slugs:
+        print("LiveBench mapped slugs absent from priced AA models: " + ", ".join(sorted(missing_slugs)))
 
     # Sort by intelligence index descending
     models_with_price.sort(key=lambda m: m["intelligence_index"] or 0, reverse=True)

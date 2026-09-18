@@ -59,6 +59,9 @@ Each entry:
 | `intelligence_index` | AA Intelligence Index score |
 | `coding_index` | SciCode score scaled to 0–100, joined from the models leaderboard |
 | `terminalbench_v4_0` | Terminal-Bench v4.0 score scaled to 0–100, joined from the models leaderboard; null when unavailable |
+| `livebench_coding` | LiveBench Coding average, 0–100; null without a reviewed model/effort match |
+| `livebench_agentic_coding` | LiveBench Agentic Coding average, 0–100; null without a reviewed model/effort match |
+| `livebench` | Source model, release, commit, retrieval time, effort, revision, agent, and completed/expected subtasks; null when unmatched |
 | `math_index` | AIME 2025 math contest score (0–100). The site removed its Math Index, so this is the stand-in |
 | `cost_per_task` | Cost to run one task of the AA Intelligence Index suite (USD) |
 | `price_1m_input_tokens` | Input price per 1M tokens (USD) |
@@ -110,7 +113,7 @@ The RSC endpoint requires specific headers (`rsc: 1`, `next-router-state-tree`, 
 
 `intelligence-vs-cost.html` replicates the scatter plot from the [artificialanalysis.ai](https://artificialanalysis.ai/) home page. Each point is one AI model. The X axis shows the cost to run one benchmark task (USD, log scale). The Y axis shows the AA Intelligence Index. A blue step line marks the Pareto frontier: the models that give the most intelligence for the money.
 
-The Y axis can show one of four scores: the Intelligence Index, SciCode, the AIME 2025 math contest score, or Terminal-Bench v4.0. Use the radio buttons in the filter row to switch. The Pareto line follows the selected score.
+The Y axis can show six scores: the Intelligence Index, SciCode, the AIME 2025 math contest score, Terminal-Bench v4.0, LiveBench Coding, or LiveBench Agentic Coding. Use the radio buttons in the filter row to switch. The Pareto line follows the selected score.
 
 Coding uses SciCode scaled to 0–100 because the models feed no longer supplies
 the former composite Coding Index. These scores are not historically comparable.
@@ -128,6 +131,72 @@ The cost axis still uses Intelligence Index task costs, including any selected
 subscription estimate. The response time filter uses the existing response-time
 measurements, not Terminal-Bench task durations. This is internal page data,
 not a supported CSV export or public API contract.
+
+### LiveBench coding scores
+
+The parser downloads the official [LiveBench score CSV](https://github.com/LiveBench/new-livebench/blob/main/public/table_2026_06_25.csv)
+and [category map](https://github.com/LiveBench/new-livebench/blob/main/public/categories_2026_06_25.json)
+for release `2026_06_25` from one resolved Git commit. The release date describes
+the benchmark, not the last model addition. Each joined result records that commit
+and its retrieval time in `livebench`, including in `--minimal` output.
+
+Coding averages `code_generation` and `code_completion`. Agentic Coding averages
+`javascript`, `typescript`, and `python`. These scores already use 0–100;
+they are not multiplied by 100 or combined with SciCode. As in the
+[official aggregation](https://github.com/LiveBench/new-livebench/blob/main/src/Table/Averaging.js),
+missing subtasks are skipped. Zero is valid, and an entirely missing category
+is null. The table and tooltips display completed/expected subtask counts so
+partial results remain visible.
+
+Select `?metric=livebench_coding` or `?metric=livebench_agentic_coding`, or use
+the radio buttons. Both views use the existing provider/model selectors,
+Pareto calculation, and response-time filter. Their cost axis is the AA
+Intelligence Index task cost with the selected subscription adjustment, and
+the response time is AA's measurement. Neither measures LiveBench evaluation
+cost or duration.
+
+The initial explicit mapping covers GPT-6 Astra max, GPT-5.6 Sol/Terra/Luna max,
+Gemini 3.8 Flash high, and DeepSeek V4.1 Flash max. Identities and effort were
+checked against LiveBench's
+[model metadata](https://github.com/LiveBench/new-livebench/blob/bc7d9c1787d85ce521304fc0472fd8c25b117f75/src/Table/modelLinks.js)
+and AA's model labels and slugs. Scores are never copied to other effort levels.
+Fable 5.1's AA fallback variant and GLM-5.3's unspecified LiveBench effort are
+not verified equivalents, so they remain unmatched. Other unreviewed IDs are
+reported during refresh. Source coverage is broader than the current join.
+`agent` and `model_revision` are null when the source does not supply them;
+DeepSeek V4.1 Flash's published revision is retained.
+
+The existing daily refresh command includes LiveBench automatically. Failed
+acquisition, invalid schema/scores, conflicting duplicate rows or mappings,
+or no chart-eligible scores in either added category abort before replacing
+`models.json`. Unknown IDs are skipped and reported. Existing benchmark fields
+and metric URLs retain their meanings; older JSON without LiveBench fields
+still works in the page.
+
+To reproduce a snapshot offline, supply all three LiveBench files alongside
+the AA dumps. The metadata JSON contains `release`, the 40-character `commit`,
+and an ISO 8601 `retrieved_at` with timezone. Use the CSV and category files from
+that same commit, retaining the original retrieval time:
+
+```bash
+python3 artificialanalysis.ai-parser.py --minimal --pretty \
+  --file providers.rsc --models-file models.rsc \
+  --livebench-file livebench.csv \
+  --livebench-categories-file livebench-categories.json \
+  --livebench-metadata-file livebench-metadata.json
+```
+
+The focused fixtures under `tests/fixtures/` contain selected official rows and
+category definitions; their metadata records the source commit and retrieval.
+Run regression checks with:
+
+```bash
+python3 -m unittest discover -s tests -v
+node --test tests/test_ui.cjs
+```
+
+The UI tests run the page's inline script with small DOM stubs in Node; they do
+not verify browser layout.
 
 The page adds one filter that the original site does not have: **maximum end-to-end response time**. Reasoning models can think for minutes before they answer. Move the slider to hide models that are slower than your limit. The page then computes the Pareto line again from the models that remain. This shows you the best value models that are also fast enough for your use case.
 
