@@ -4,6 +4,8 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 ## Ordered backlog
 
+## Scheduled
+
 - [*] The empty chart and table for Terminal-Bench v4.0 come from a renamed upstream
   field. The live [models feed](https://artificialanalysis.ai/leaderboards/models) now
   uses `terminalBench40`;
