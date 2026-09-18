@@ -11,11 +11,11 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 ## Scheduled
 
+## In progress
+
 - [*] Add provider and model selectors. The user needs to be able to clear all
   selections and then toggle visibility of individual models (all reasoning levels) or
   all models from a provider.
-
-## In progress
 
 - [*] The empty chart and table for Terminal-Bench v4.0 come from a renamed upstream
   field. The live [models feed](https://artificialanalysis.ai/leaderboards/models) now

@@ -91,6 +91,11 @@
     cursor: pointer;
   }
   .filters button[aria-pressed="true"] { background: var(--series-1); color: #fff; border-color: transparent; }
+  .model-filters { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: start; }
+  .model-filters fieldset { min-width: 180px; margin: 0; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; }
+  .model-filters legend { padding: 0 4px; color: var(--text-secondary); }
+  .model-filters label { display: flex; margin: 3px 0; }
+  .model-filters .provider-models { margin-left: 18px; }
 
   .status { color: var(--text-secondary); font-size: 13px; margin: 0 0 8px; }
 
@@ -200,6 +205,8 @@
     </div>
     <label><input type="checkbox" id="show-deprecated"> Show deprecated models</label>
     <label><input type="checkbox" id="pareto-y-zoom"> Zoom Y axis to Pareto line</label>
+    <button id="clear-models" type="button">Clear models</button>
+    <div class="model-filters" id="model-filters" aria-label="Model visibility filters"></div>
     <button id="table-toggle" aria-pressed="false">Table view</button>
     <button id="fullscreen-toggle" aria-pressed="false" aria-label="Open chart in full screen" title="Open chart in full screen">⤢</button>
   </div>
@@ -326,6 +333,7 @@ const state = {
   showDeprecated: false,
   paretoYZoom: false,
   logMin: 1, logMax: 300,  // slider range, from the data
+  selectedModels: new Set(),
 };
 
 const FILTER_PARAMS = {
@@ -372,6 +380,7 @@ fetch("models.json")
     state.models = all.filter((m) =>
       m.cost_per_task != null &&
       Object.keys(METRICS).some((k) => m[k] != null));
+    buildModelFilters();
     const times = state.models.map((m) => m.e2e_response_time_s).filter((v) => v != null);
     state.logMin = Math.max(1, Math.floor(Math.min(...times)));
     state.logMax = Math.ceil(Math.max(...times));
@@ -392,6 +401,59 @@ fetch("models.json")
 /* ---------- filter controls ---------- */
 const slider = document.getElementById("e2e-slider");
 const numBox = document.getElementById("e2e-number");
+const modelFilters = document.getElementById("model-filters");
+const baseModelName = (m) => m.name.replace(/\s+\([^)]*\)$/, "");
+const modelKey = (provider, name) => provider + "::" + name;
+
+function buildModelFilters() {
+  const groups = new Map();
+  for (const m of state.models) {
+    const key = baseModelName(m);
+    if (!groups.has(m.provider)) groups.set(m.provider, new Map());
+    groups.get(m.provider).set(key, true);
+    state.selectedModels.add(modelKey(m.provider, key));
+  }
+  modelFilters.innerHTML = [...groups].sort().map(([provider, models]) => {
+    const id = "provider-" + provider.replace(/\W+/g, "-");
+    return "<fieldset data-provider=\"" + esc(provider) + "\">" +
+      "<legend><label><input type=\"checkbox\" id=\"" + id +
+      "\" data-provider-toggle> " + esc(provider) + "</label></legend>" +
+      '<div class="provider-models">' + [...models.keys()].sort().map((key) =>
+        '<label><input type="checkbox" data-model="' + esc(modelKey(provider, key)) + '" checked> ' +
+        esc(key) + "</label>").join("") + "</div></fieldset>";
+  }).join("");
+  syncModelFilters();
+}
+function syncModelFilters() {
+  modelFilters.querySelectorAll("[data-model]").forEach((input) => {
+    input.checked = state.selectedModels.has(input.dataset.model);
+  });
+  modelFilters.querySelectorAll("[data-provider-toggle]").forEach((input) => {
+    const models = [...input.closest("fieldset").querySelectorAll("[data-model]")];
+    const selected = models.filter((m) => state.selectedModels.has(m.dataset.model)).length;
+    input.checked = selected === models.length;
+    input.indeterminate = selected > 0 && selected < models.length;
+  });
+}
+modelFilters.addEventListener("change", (e) => {
+  if (e.target.matches("[data-provider-toggle]")) {
+    const models = e.target.closest("fieldset").querySelectorAll("[data-model]");
+    models.forEach((input) => e.target.checked
+      ? state.selectedModels.add(input.dataset.model)
+      : state.selectedModels.delete(input.dataset.model));
+  } else if (e.target.matches("[data-model]")) {
+    e.target.checked
+      ? state.selectedModels.add(e.target.dataset.model)
+      : state.selectedModels.delete(e.target.dataset.model);
+  }
+  syncModelFilters();
+  render();
+});
+document.getElementById("clear-models").addEventListener("click", () => {
+  state.selectedModels.clear();
+  syncModelFilters();
+  render();
+});
 
 // The slider is linear in log(time). Small values get fine steps this way.
 function sliderToSeconds(v) {
@@ -525,7 +587,9 @@ function render() {
   if (!state.models.length) return;
 
   const metric = state.metric;
-  const base = state.models.filter((m) => state.showDeprecated || !m.deprecated);
+  const base = state.models.filter((m) =>
+    state.selectedModels.has(modelKey(m.provider, baseModelName(m))) &&
+    (state.showDeprecated || !m.deprecated));
   const pool = base.filter((m) => m[metric] != null);
   const noScore = base.length - pool.length;
   const shown = pool.filter((m) => state.maxE2e === Infinity || m.e2e_response_time_s == null || m.e2e_response_time_s <= state.maxE2e);
