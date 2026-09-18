@@ -30,6 +30,24 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 Here are the rules for TASKS.md usage:
 
+### Unverified proposals
+
+- Bullets under `## Unverified proposals` are ideas that nobody has reviewed yet. They
+  are not candidates for scheduling: a heartbeat never picks from this section. Antti
+  reviews a proposal and moves it into `## Ordered backlog`, or deletes it.
+- Before adding a proposal, read the whole section. Drop an exact duplicate. Merge a
+  similar existing proposal with the new one into a single revision that combines the
+  ideas of both.
+
+### Invariant: one heading per issue
+
+At any time, each issue's bullet must be under exactly one `##` heading (for example
+`## Ordered backlog` or `## In progress`). It must never be under two headings at the
+same time.
+
+- Before you commit any change to TASKS.md, read the whole file and check that no bullet
+  appears under two headings.
+
 ### TASKS.md maintenance sessions
 
 - Each backlog item must be prefixed with either
@@ -39,6 +57,16 @@ Here are the rules for TASKS.md usage:
 - If any issue is missing a link:
   - Create the first missing numbered description file in
     docs/tasks/<N-issue-description>.md and add the link
+- Any completed tasks which haven't yet been moved from `## In Progress` to
+  `## Completed` should be moved there.
+- Any in progress tasks which haven't yet been moved from `## Ordered backlog` or
+  `## Scheduled` to `## In Progress` should be moved there.
+- Remove all issues the user has moved to the `## Accepted` section along with any
+  related description files in `docs/tasks/` and the reference-style links pointing to
+  them.
+- Ensure there are no duplicate sections, and that they are in the correct order:
+  `## Unverified proposals` -> `## Ordered backlog` -> `## Scheduled` ->
+  `## In Progress` -> `## Completed` -> `## Accepted` -> `## Rules`.
 
 ### Modifying issues
 
@@ -47,27 +75,42 @@ Here are the rules for TASKS.md usage:
   - indented `- Depends on: [N]` bullets in TASKS.md, and
   - YAML frontmatter in description files.
 - Ensure backlog order respects dependencies.
+- When you move an issue to a different section, move its lines without a change. Keep
+  the prefix, the bullet text and the line wrapping the same. Git can then see the move,
+  and concurrent moves do not cause a conflict.
 
 ### Workflow for new issue completion
 
 1. Choose issue and schedule work (typically by a heartbeat)
+
 - Pick the first backlog issue with no dependency to any uncompleted issue.
-- Move it under `## Scheduled` in `TASKS.md` and remove it from `## Ordered
-  backlog` in the `main` branch and commit.
+- Move it under `## Scheduled` in `TASKS.md` and remove it from `## Ordered backlog` in
+  the `main` branch and commit.
 
 2. Work on the issue (typically by a task workflow)
-- Move the issue under `## In progress` in `TASKS.md` in the worktree branch,
-  ensure it's not in `## Ordered backlog`, and commit.
-- Create or update, review and refine a plan in
-  docs/tasks/<N-issue-description>.md in `main` if more description is needed
-  than nicely fits in a bullet point. If you created a plan document, link to it
-  using a new `[N]` reference-style link.
-- Commit description file (if any) and TASKS.md in `main`.
-- From now on, ensure worktree feature branch is always rebased on `main`.
-- Implement the plan, and lint, test, review and refine the implementation in
-  the worktree feature branch.
+
+- Rebase the worktree feature branch on `main` before moving the issue, and keep it
+  rebased afterwards.
+- Move the issue under `## In progress` in `TASKS.md` in the worktree branch, ensure
+  it's not in `## Ordered backlog`, and commit.
+- Create or update, review and refine a plan in docs/tasks/<N-issue-description>.md in
+  `main` if more description is needed than nicely fits in a bullet point. If you
+  created a plan document, link to it using a new `[N]` reference-style link.
+- Commit the description file (if any) in `main`.
+- Implement the plan, and lint, test, review and refine the implementation in the
+  worktree feature branch.
 
 3. Merge and deploy (typically by last steps of a task workflow)
+
 - Merge the rebased branch on `main`, and remove the worktree and branch.
 - Move the issue from `## In progress` to `## Completed` in TASKS.md and commit.
 - Do any deployment steps if defined in the general development worklow.
+
+When TASKS.md conflicts during a rebase or merge:
+
+- Use `main`'s version of every section as the base.
+- Apply again only the move of your own issue.
+- Never restore, add again or re-word another issue's bullet from your side of the
+  conflict.
+- After resolving the conflict, read the whole file and ensure that each bullet is under
+  exactly one `##` heading.
