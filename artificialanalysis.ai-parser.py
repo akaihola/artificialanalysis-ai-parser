@@ -119,7 +119,7 @@ def extract_model_indexes(raw):
             if not isinstance(m, dict) or not m.get("slug"):
                 continue
             entry = indexes.setdefault(m["slug"], {})
-            for key in ("scicode", "terminalbenchV40"):
+            for key in ("scicode", "terminalBench40"):
                 score = m.get(key)
                 if type(score) in (int, float) and 0 <= score <= 1:
                     entry[key] = score
@@ -203,7 +203,7 @@ def clean_model(entry, indexes=None):
     e2e_s = value_or_none(perf.get("medianEndToEndResponseTimeSeconds"))
     model_indexes = (indexes or {}).get(model.get("slug"), {})
     scicode = model_indexes.get("scicode")
-    terminalbench = model_indexes.get("terminalbenchV40")
+    terminalbench = model_indexes.get("terminalBench40")
     aime25 = value_or_none(model.get("aime25"))
 
     return {
@@ -297,6 +297,10 @@ def main():
     print(f"Models with pricing: {len(models_with_price)}")
 
     # Preserve the last usable dataset when the score feed or slug join breaks.
+    if not any("terminalBench40" in m for m in indexes.values()):
+        print("Error: no Terminal-Bench v4.0 scores; check the models leaderboard "
+              "download and terminalBench40 field. Output left unchanged.")
+        sys.exit(1)
     if not any(
         not m["deprecated"] and m["coding_index"] is not None
         and type(m["cost_per_task"]) in (int, float)
