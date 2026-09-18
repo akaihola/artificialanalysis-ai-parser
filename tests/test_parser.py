@@ -44,23 +44,23 @@ class ParserTests(unittest.TestCase):
 
     def test_terminalbench_join_and_version(self):
         raw = stream("models", [
-            {"slug": "test", "terminalbenchV40": 0.25},
-            {"slug": "other", "terminalbenchV40": 0.9},
+            {"slug": "test", "terminalBench40": 0.25},
+            {"slug": "other", "terminalBench40": 0.9},
         ])
-        for later in [{}, {"terminalbenchV40": None}, {"terminalbenchV40": True}]:
+        for later in [{}, {"terminalBench40": None}, {"terminalBench40": True}]:
             raw += b"\n" + stream("models", [{"slug": "test", **later}])
         model = parser.clean_model(ROW, parser.extract_model_indexes(raw))
         self.assertEqual(model["terminalbench_v4_0"], 25)
         self.assertEqual(model["intelligence_index"], 42)
         self.assertEqual(model["math_index"], 75)
         for scores in [{}, {"terminalbenchHard": 0.9, "terminalbenchV21": 0.8},
-                       {"slug": "test-other", "terminalbenchV40": 0.5}]:
+                       {"slug": "test-other", "terminalBench40": 0.5}]:
             raw = stream("models", [{"slug": "test", **scores}])
             self.assertIsNone(parser.clean_model(ROW, parser.extract_model_indexes(raw))["terminalbench_v4_0"])
 
     def test_score_validation(self):
         for source, target in [("scicode", "coding_index"),
-                               ("terminalbenchV40", "terminalbench_v4_0")]:
+                               ("terminalBench40", "terminalbench_v4_0")]:
             for value in [None, "$undefined", "0.5", True, False, -0.1, 1.1,
                           float("nan"), float("inf"), -float("inf"), 0, 1, 0.0, 1.0, 0.25]:
                 with self.subTest(source=source, value=value):
@@ -86,9 +86,9 @@ class ParserTests(unittest.TestCase):
         for minimal in [False, True]:
             with self.subTest(minimal=minimal), tempfile.TemporaryDirectory() as directory:
                 data = self.run_main(directory, stream("rows", [ROW]),
-                                     stream("models", [{"slug": "test", "scicode": 0}]), minimal)
+                                     stream("models", [{"slug": "test", "scicode": 0, "terminalBench40": 0}]), minimal)
                 self.assertEqual(data[0]["coding_index"], 0)
-                self.assertIsNone(data[0]["terminalbench_v4_0"])
+                self.assertEqual(data[0]["terminalbench_v4_0"], 0)
                 self.assertEqual("agentic_index" in data[0], not minimal)
 
     def test_terminalbench_output(self):
@@ -96,15 +96,16 @@ class ParserTests(unittest.TestCase):
             for score in [0, 0.25]:
                 with self.subTest(minimal=minimal, score=score), tempfile.TemporaryDirectory() as directory:
                     data = self.run_main(directory, stream("rows", [ROW]), stream("models", [
-                        {"slug": "test", "scicode": 0.5, "terminalbenchV40": score},
+                        {"slug": "test", "scicode": 0.5, "terminalBench40": score},
                     ]), minimal)
                     self.assertEqual(data[0]["terminalbench_v4_0"], score * 100)
                     self.assertEqual(data[0]["coding_index"], 50)
 
     def test_failed_refresh_preserves_output(self):
-        valid = stream("models", [{"slug": "test", "scicode": 0.5}])
+        valid = stream("models", [{"slug": "test", "scicode": 0.5, "terminalBench40": 0.5}])
         cases = [(None, valid), (stream("rows", [ROW]), None),
                  (stream("rows", [ROW]), stream("models", [{"slug": "test"}])),
+                 (stream("rows", [ROW]), stream("models", [{"slug": "test", "scicode": 0.5, "terminalbenchV40": 0.5}])),
                  (stream("rows", [ROW]), stream("models", [{"slug": "other", "scicode": 0.5}]))]
         for section, field, values in [
             ("pricing", "price1mInputTokens", [None, 0]),
