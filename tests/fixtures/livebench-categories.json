@@ -1,0 +1,11 @@
+{
+  "Coding": [
+    "code_generation",
+    "code_completion"
+  ],
+  "Agentic Coding": [
+    "javascript",
+    "typescript",
+    "python"
+  ]
+}

@@ -6,12 +6,12 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 ## Scheduled
 
+## In progress
+
 - [*] Include more coding benchmarks based on [our coding benchmark research]. Note that
   the research may still be unmerged, living in
   `~/.kandev/tasks/research-to-find-oth_ayocnvb3/artificialanalysis-ai-parser/docs/coding-benchmark-research.md`.
   Prefer Astra or Fable (Medium) for this task.
-
-## In progress
 
 - [*] Add provider and model selectors. The user needs to be able to clear all
   selections and then toggle visibility of individual models (all reasoning levels) or
