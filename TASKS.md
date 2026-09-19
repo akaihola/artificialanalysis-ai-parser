@@ -10,22 +10,11 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 ## Completed
 
-- [*] Add provider and model selectors. The user needs to be able to clear all
-  selections and then toggle visibility of individual models (all reasoning levels) or
-  all models from a provider.
+- [1] Add provider and model selectors with clear-all and grouped visibility toggles.
 
-- [*] The empty chart and table for Terminal-Bench v4.0 come from a renamed upstream
-  field. The live [models feed](https://artificialanalysis.ai/leaderboards/models) now
-  uses `terminalBench40`;
-  [our parser](https://github.com/akaihola/artificialanalysis-ai-parser/blob/a28f0a6ea6a514e62adb7376313270a7096bdfd8/artificialanalysis.ai-parser.py#L122)
-  expects `terminalbenchV40`. Consequently, all 410 models have
-  `terminalbench_v4_0: null`, and both views exclude them. The refresh validation only
-  checks SciCode, so this failure passes unnoticed. Fix the parser.
+- [2] Fix the renamed Terminal-Bench v4.0 field that left the chart and table empty.
 
-- [*] Include more coding benchmarks based on [our coding benchmark research]. Note that
-  the research may still be unmerged, living in
-  `~/.kandev/tasks/research-to-find-oth_ayocnvb3/artificialanalysis-ai-parser/docs/coding-benchmark-research.md`.
-  Prefer Astra or Fable (Medium) for this task.
+- [3] Include more coding benchmarks based on the coding benchmark research.
 
 - [*] Add Terminal-Bench v4.0 as a selectable benchmark
 
@@ -41,7 +30,9 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 - [*] Add Pareto chart Y-axis zoom
 
-[our coding benchmark research]: docs/coding-benchmark-research.md
+[1]: docs/tasks/1-provider-and-model-selectors.md
+[2]: docs/tasks/2-terminal-bench-field-parsing.md
+[3]: docs/tasks/3-additional-coding-benchmarks.md
 [*]: TASKS.md
 
 ---
