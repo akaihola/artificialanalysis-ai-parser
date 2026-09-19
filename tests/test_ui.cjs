@@ -103,6 +103,10 @@ for (const metric of added) {
     const p = await page(models, metric);
     assert.match(p.node('provider-select').innerHTML, /<option value="OpenAI"/);
     assert.match(p.node('model-select').innerHTML, /<option value="OpenAI::Best"/);
+    p.node('model-search').value = 'best';
+    p.node('model-search').events.input();
+    assert.match(p.node('model-select').innerHTML, /OpenAI::Best/);
+    assert.doesNotMatch(p.node('model-select').innerHTML, /OpenAI::Zero/);
     p.node('e2e-number').value = '25';
     p.node('e2e-number').events.input();
     assert.doesNotMatch(p.table(), /<td>Best<\/td>/);

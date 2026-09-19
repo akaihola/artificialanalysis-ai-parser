@@ -93,7 +93,7 @@
   .filters button[aria-pressed="true"] { background: var(--series-1); color: #fff; border-color: transparent; }
   .model-filters { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; }
   .model-filters label { display: flex; align-items: center; gap: 8px; }
-  .model-filters select { min-width: 180px; }
+  .model-filters select, .model-filters input[type="search"] { min-width: 180px; }
 
   .status { color: var(--text-secondary); font-size: 13px; margin: 0 0 8px; }
 
@@ -211,6 +211,8 @@
       <select id="provider-select" aria-label="Provider"></select>
       <label for="model-select">Models</label>
       <select id="model-select" aria-label="Models" multiple size="1"></select>
+      <label for="model-search">Filter models</label>
+      <input id="model-search" type="search" placeholder="Search models" aria-label="Filter models">
     </div>
     <button id="table-toggle" aria-pressed="false">Table view</button>
     <button id="fullscreen-toggle" aria-pressed="false" aria-label="Open chart in full screen" title="Open chart in full screen">⤢</button>
@@ -421,6 +423,7 @@ const numBox = document.getElementById("e2e-number");
 const modelFilters = document.getElementById("model-filters");
 const providerSelect = document.getElementById("provider-select");
 const modelSelect = document.getElementById("model-select");
+const modelSearch = document.getElementById("model-search");
 const baseModelName = (m) => m.name.replace(/\s+\([^)]*\)$/, "");
 const modelKey = (provider, name) => provider + "::" + name;
 let selectedProvider = "";
@@ -443,7 +446,9 @@ function buildModelFilters() {
 }
 function syncModelOptions(groups) {
   const models = groups.get(selectedProvider) || new Map();
-  modelSelect.innerHTML = [...models.keys()].sort().map((name) => {
+  const query = modelSearch.value.trim().toLowerCase();
+  modelSelect.innerHTML = [...models.keys()].sort().filter((name) =>
+    !query || name.toLowerCase().includes(query)).map((name) => {
     const key = modelKey(selectedProvider, name);
     return '<option value="' + esc(key) + '"' +
       (state.selectedModels.has(key) ? " selected" : "") + ">" + esc(name) + "</option>";
@@ -456,6 +461,15 @@ function syncModelFilters() {
 }
 providerSelect.addEventListener("change", () => {
   selectedProvider = providerSelect.value;
+  const groups = new Map();
+  for (const m of state.models) {
+    const key = baseModelName(m);
+    if (!groups.has(m.provider)) groups.set(m.provider, new Map());
+    groups.get(m.provider).set(key, true);
+  }
+  syncModelOptions(groups);
+});
+modelSearch.addEventListener("input", () => {
   const groups = new Map();
   for (const m of state.models) {
     const key = baseModelName(m);
