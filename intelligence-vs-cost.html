@@ -91,11 +91,9 @@
     cursor: pointer;
   }
   .filters button[aria-pressed="true"] { background: var(--series-1); color: #fff; border-color: transparent; }
-  .model-filters { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: start; }
-  .model-filters fieldset { min-width: 180px; margin: 0; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; }
-  .model-filters legend { padding: 0 4px; color: var(--text-secondary); }
-  .model-filters label { display: flex; margin: 3px 0; }
-  .model-filters .provider-models { margin-left: 18px; }
+  .model-filters { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; }
+  .model-filters label { display: flex; align-items: center; gap: 8px; }
+  .model-filters select { min-width: 180px; }
 
   .status { color: var(--text-secondary); font-size: 13px; margin: 0 0 8px; }
 
@@ -208,7 +206,12 @@
     <label><input type="checkbox" id="show-deprecated"> Show deprecated models</label>
     <label><input type="checkbox" id="pareto-y-zoom"> Zoom Y axis to Pareto line</label>
     <button id="clear-models" type="button">Clear models</button>
-    <div class="model-filters" id="model-filters" aria-label="Model visibility filters"></div>
+    <div class="model-filters" id="model-filters" aria-label="Model visibility filters">
+      <label for="provider-select">Provider</label>
+      <select id="provider-select" aria-label="Provider"></select>
+      <label for="model-select">Models</label>
+      <select id="model-select" aria-label="Models" multiple size="1"></select>
+    </div>
     <button id="table-toggle" aria-pressed="false">Table view</button>
     <button id="fullscreen-toggle" aria-pressed="false" aria-label="Open chart in full screen" title="Open chart in full screen">⤢</button>
   </div>
@@ -416,8 +419,11 @@ fetch("models.json")
 const slider = document.getElementById("e2e-slider");
 const numBox = document.getElementById("e2e-number");
 const modelFilters = document.getElementById("model-filters");
+const providerSelect = document.getElementById("provider-select");
+const modelSelect = document.getElementById("model-select");
 const baseModelName = (m) => m.name.replace(/\s+\([^)]*\)$/, "");
 const modelKey = (provider, name) => provider + "::" + name;
+let selectedProvider = "";
 
 function buildModelFilters() {
   const groups = new Map();
@@ -427,38 +433,41 @@ function buildModelFilters() {
     groups.get(m.provider).set(key, true);
     state.selectedModels.add(modelKey(m.provider, key));
   }
-  modelFilters.innerHTML = [...groups].sort().map(([provider, models]) => {
-    const id = "provider-" + provider.replace(/\W+/g, "-");
-    return "<fieldset data-provider=\"" + esc(provider) + "\">" +
-      "<legend><label><input type=\"checkbox\" id=\"" + id +
-      "\" data-provider-toggle> " + esc(provider) + "</label></legend>" +
-      '<div class="provider-models">' + [...models.keys()].sort().map((key) =>
-        '<label><input type="checkbox" data-model="' + esc(modelKey(provider, key)) + '" checked> ' +
-        esc(key) + "</label>").join("") + "</div></fieldset>";
-  }).join("");
+  const providers = [...groups.keys()].sort();
+  selectedProvider = groups.has(selectedProvider) ? selectedProvider : providers[0] || "";
+  providerSelect.innerHTML = providers.map((provider) =>
+    '<option value="' + esc(provider) + '"' + (provider === selectedProvider ? " selected" : "") + ">" +
+    esc(provider) + "</option>").join("");
+  syncModelOptions(groups);
   syncModelFilters();
 }
+function syncModelOptions(groups) {
+  const models = groups.get(selectedProvider) || new Map();
+  modelSelect.innerHTML = [...models.keys()].sort().map((name) => {
+    const key = modelKey(selectedProvider, name);
+    return '<option value="' + esc(key) + '"' +
+      (state.selectedModels.has(key) ? " selected" : "") + ">" + esc(name) + "</option>";
+  }).join("");
+}
 function syncModelFilters() {
-  modelFilters.querySelectorAll("[data-model]").forEach((input) => {
-    input.checked = state.selectedModels.has(input.dataset.model);
-  });
-  modelFilters.querySelectorAll("[data-provider-toggle]").forEach((input) => {
-    const models = [...input.closest("fieldset").querySelectorAll("[data-model]")];
-    const selected = models.filter((m) => state.selectedModels.has(m.dataset.model)).length;
-    input.checked = selected === models.length;
-    input.indeterminate = selected > 0 && selected < models.length;
+  [...modelSelect.options].forEach((option) => {
+    option.selected = state.selectedModels.has(option.value);
   });
 }
-modelFilters.addEventListener("change", (e) => {
-  if (e.target.matches("[data-provider-toggle]")) {
-    const models = e.target.closest("fieldset").querySelectorAll("[data-model]");
-    models.forEach((input) => e.target.checked
-      ? state.selectedModels.add(input.dataset.model)
-      : state.selectedModels.delete(input.dataset.model));
-  } else if (e.target.matches("[data-model]")) {
-    e.target.checked
-      ? state.selectedModels.add(e.target.dataset.model)
-      : state.selectedModels.delete(e.target.dataset.model);
+providerSelect.addEventListener("change", () => {
+  selectedProvider = providerSelect.value;
+  const groups = new Map();
+  for (const m of state.models) {
+    const key = baseModelName(m);
+    if (!groups.has(m.provider)) groups.set(m.provider, new Map());
+    groups.get(m.provider).set(key, true);
+  }
+  syncModelOptions(groups);
+});
+modelSelect.addEventListener("change", () => {
+  const visible = new Set([...modelSelect.selectedOptions].map((option) => option.value));
+  for (const option of modelSelect.options) {
+    visible.has(option.value) ? state.selectedModels.add(option.value) : state.selectedModels.delete(option.value);
   }
   syncModelFilters();
   render();

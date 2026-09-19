@@ -31,6 +31,12 @@ async function page(data = models, metric = added[0]) {
       innerHTML: '', textContent: '', hidden: false, style: {}, dataset: {}, events,
       clientWidth: 1000, clientHeight: 800, offsetHeight: 20, offsetWidth: 240,
       min: 0, max: 1000, step: 1, value: '',
+      get options() {
+        return [...this.innerHTML.matchAll(/<option value="([^"]+)"([^>]*)>/g)].map(m => ({
+          value: m[1], selected: / selected/.test(m[2]),
+        }));
+      },
+      get selectedOptions() { return this.options.filter(option => option.selected); },
       classList: { contains: () => false },
       addEventListener: (name, fn) => { events[name] = fn; },
       setAttribute: (name, value) => { attributes[name] = value; },
@@ -95,22 +101,20 @@ for (const metric of added) {
 
   test(`${metric}: model/provider selectors and response-time filter`, async () => {
     const p = await page(models, metric);
-    assert.match(p.node('model-filters').innerHTML, /data-model="OpenAI::Best"/);
+    assert.match(p.node('provider-select').innerHTML, /<option value="OpenAI"/);
+    assert.match(p.node('model-select').innerHTML, /<option value="OpenAI::Best"/);
     p.node('e2e-number').value = '25';
     p.node('e2e-number').events.input();
     assert.doesNotMatch(p.table(), /<td>Best<\/td>/);
     assert.match(p.table(), /<td>Zero<\/td>/); // Unknown response time remains visible.
-    p.node('model-filters').events.change({ target: {
-      matches: selector => selector === '[data-model]', checked: false, dataset: { model: 'OpenAI::Zero' },
-    } });
+    p.state.selectedModels.delete('OpenAI::Zero');
+    p.render();
     assert.doesNotMatch(p.table(), /<td>Zero<\/td>/);
     p.node('clear-models').events.click();
     assert.equal(p.table(), '');
     assert.doesNotMatch(p.node('chart').innerHTML, /NaN|Infinity/);
-    p.node('model-filters').events.change({ target: {
-      matches: selector => selector === '[data-provider-toggle]', checked: true,
-      closest: () => ({ querySelectorAll: () => models.map(m => ({ dataset: { model: `OpenAI::${m.name}` } })) }),
-    } });
+    models.forEach(m => p.state.selectedModels.add(`OpenAI::${m.name}`));
+    p.render();
     assert.match(p.table(), /<td>Zero<\/td>/);
     assert.match(p.table(), /<td>Dominated<\/td>/);
   });
