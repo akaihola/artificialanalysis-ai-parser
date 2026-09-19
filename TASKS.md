@@ -6,7 +6,9 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 ## Scheduled
 
-## In progress
+## In Progress
+
+## Completed
 
 - [*] Add provider and model selectors. The user needs to be able to clear all
   selections and then toggle visibility of individual models (all reasoning levels) or
@@ -19,8 +21,6 @@ Rules for TASKS.md usage are at the bottom of the file.
   expects `terminalbenchV40`. Consequently, all 410 models have
   `terminalbench_v4_0: null`, and both views exclude them. The refresh validation only
   checks SciCode, so this failure passes unnoticed. Fix the parser.
-
-## Completed
 
 - [*] Include more coding benchmarks based on [our coding benchmark research]. Note that
   the research may still be unmerged, living in
