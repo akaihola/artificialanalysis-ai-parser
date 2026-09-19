@@ -10,22 +10,11 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 ## Completed
 
-- [*] Add provider and model selectors. The user needs to be able to clear all
-  selections and then toggle visibility of individual models (all reasoning levels) or
-  all models from a provider.
+- [1] Add provider and model selectors with clear-all and grouped visibility toggles.
 
-- [*] The empty chart and table for Terminal-Bench v4.0 come from a renamed upstream
-  field. The live [models feed](https://artificialanalysis.ai/leaderboards/models) now
-  uses `terminalBench40`;
-  [our parser](https://github.com/akaihola/artificialanalysis-ai-parser/blob/a28f0a6ea6a514e62adb7376313270a7096bdfd8/artificialanalysis.ai-parser.py#L122)
-  expects `terminalbenchV40`. Consequently, all 410 models have
-  `terminalbench_v4_0: null`, and both views exclude them. The refresh validation only
-  checks SciCode, so this failure passes unnoticed. Fix the parser.
+- [2] Fix the renamed Terminal-Bench v4.0 field that left the chart and table empty.
 
-- [*] Include more coding benchmarks based on [our coding benchmark research]. Note that
-  the research may still be unmerged, living in
-  `~/.kandev/tasks/research-to-find-oth_ayocnvb3/artificialanalysis-ai-parser/docs/coding-benchmark-research.md`.
-  Prefer Astra or Fable (Medium) for this task.
+- [3] Include more coding benchmarks based on the coding benchmark research.
 
 - [*] Add Terminal-Bench v4.0 as a selectable benchmark
 
@@ -41,7 +30,9 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 - [*] Add Pareto chart Y-axis zoom
 
-[our coding benchmark research]: docs/coding-benchmark-research.md
+[1]: docs/tasks/1-provider-and-model-selectors.md
+[2]: docs/tasks/2-terminal-bench-field-parsing.md
+[3]: docs/tasks/3-additional-coding-benchmarks.md
 [*]: TASKS.md
 
 ---
@@ -62,7 +53,7 @@ Here are the rules for TASKS.md usage:
 ### Invariant: one heading per issue
 
 At any time, each issue's bullet must be under exactly one `##` heading (for example
-`## Ordered backlog` or `## In progress`). It must never be under two headings at the
+`## Ordered backlog` or `## In Progress`). It must never be under two headings at the
 same time.
 
 - Before you commit any change to TASKS.md, read the whole file and check that no bullet
@@ -74,9 +65,15 @@ same time.
   - a numbered reference-style link (e.g. `[1]`) to a description file, or
   - `[*]` to indicate no description file is needed for a simple task.
 - Link references are listed between `## Completed` and `## Rules`.
-- If any issue is missing a link:
-  - Create the first missing numbered description file in
-    docs/tasks/<N-issue-description>.md and add the link
+- Keep simple tasks inline with `[*]`. Extract long descriptions into
+  `docs/tasks/N-issue-description.md`, preserving requirements, rationale, examples,
+  and acceptance criteria; leave a concise summary and `[N]` link here.
+- Reuse an existing task number and description file when available. For a new
+  description, choose the next unused positive integer after the highest existing
+  task number. Match the reference label to the filename prefix, and check both
+  this tracker and `docs/tasks/` before assigning it.
+- Verify status changes against repository history and available task-workflow
+  evidence before moving issues.
 - Any completed tasks which haven't yet been moved from `## In Progress` to
   `## Completed` should be moved there.
 - Any in progress tasks which haven't yet been moved from `## Ordered backlog` or
@@ -105,30 +102,30 @@ same time.
 
 - Pick the first backlog issue with no dependency to any uncompleted issue.
 - Move it under `## Scheduled` in `TASKS.md` and remove it from `## Ordered backlog` in
-  the `main` branch and commit.
+  the `master` branch and commit.
 
 2. Work on the issue (typically by a task workflow)
 
-- Rebase the worktree feature branch on `main` before moving the issue, and keep it
+- Rebase the worktree feature branch on `master` before moving the issue, and keep it
   rebased afterwards.
-- Move the issue under `## In progress` in `TASKS.md` in the worktree branch, ensure
+- Move the issue under `## In Progress` in `TASKS.md` in the worktree branch, ensure
   it's not in `## Ordered backlog`, and commit.
 - Create or update, review and refine a plan in docs/tasks/<N-issue-description>.md in
-  `main` if more description is needed than nicely fits in a bullet point. If you
+  `master` if more description is needed than nicely fits in a bullet point. If you
   created a plan document, link to it using a new `[N]` reference-style link.
-- Commit the description file (if any) in `main`.
+- Commit the description file (if any) in `master`.
 - Implement the plan, and lint, test, review and refine the implementation in the
   worktree feature branch.
 
 3. Merge and deploy (typically by last steps of a task workflow)
 
-- Merge the rebased branch on `main`, and remove the worktree and branch.
-- Move the issue from `## In progress` to `## Completed` in TASKS.md and commit.
-- Do any deployment steps if defined in the general development worklow.
+- Merge the rebased branch on `master`, and remove the worktree and branch.
+- Move the issue from `## In Progress` to `## Completed` in TASKS.md and commit.
+- Do any deployment steps if defined in the general development workflow.
 
 When TASKS.md conflicts during a rebase or merge:
 
-- Use `main`'s version of every section as the base.
+- Use `master`'s version of every section as the base.
 - Apply again only the move of your own issue.
 - Never restore, add again or re-word another issue's bullet from your side of the
   conflict.
