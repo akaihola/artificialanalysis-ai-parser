@@ -4,7 +4,9 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 ## Ordered backlog
 
+
 ## Scheduled
+- [4] Condense provider/model selection into drop-down menus.
 
 ## In Progress
 
@@ -33,6 +35,7 @@ Rules for TASKS.md usage are at the bottom of the file.
 [1]: docs/tasks/1-provider-and-model-selectors.md
 [2]: docs/tasks/2-terminal-bench-field-parsing.md
 [3]: docs/tasks/3-additional-coding-benchmarks.md
+[4]: docs/tasks/4-provider-model-drop-down.md
 [*]: TASKS.md
 
 ---
