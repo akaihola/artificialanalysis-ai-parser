@@ -6,9 +6,8 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 
 ## Scheduled
-- [4] Condense provider/model selection into drop-down menus.
-
 ## In Progress
+- [4] Condense provider/model selection into drop-down menus.
 
 ## Completed
 
