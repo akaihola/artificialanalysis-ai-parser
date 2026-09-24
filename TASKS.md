@@ -4,10 +4,11 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 ## Ordered backlog
 
+- [*] [4] tried to condense provider and model drop-downs into a good model selection UI. It utterly failed, and we lost `docs/tasks/4-provider-model-drop-down.md` as well. Recover it e.g. from session logs. We want something similar to Artificial Analysis model selector. This is a demanding task, use the most competent model.
 
 ## Scheduled
+
 ## In Progress
-- [4] Condense provider/model selection into drop-down menus.
 
 ## Completed
 
@@ -30,6 +31,10 @@ Rules for TASKS.md usage are at the bottom of the file.
   changes to `master`
 
 - [*] Add Pareto chart Y-axis zoom
+
+## Accepted
+
+- [4] Condense provider/model selection into drop-down menus.
 
 [1]: docs/tasks/1-provider-and-model-selectors.md
 [2]: docs/tasks/2-terminal-bench-field-parsing.md
