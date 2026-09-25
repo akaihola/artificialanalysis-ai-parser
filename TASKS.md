@@ -4,7 +4,7 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 ## Ordered backlog
 
-- [*] [4] tried to condense provider and model drop-downs into a good model selection UI. It utterly failed, and we lost `docs/tasks/4-provider-model-drop-down.md` as well. Recover it e.g. from session logs. We want something similar to Artificial Analysis model selector. This is a demanding task, use the most competent model.
+- [*] Task [4] tried to condense provider and model drop-downs into a good model selection UI. It utterly failed, and we lost `docs/tasks/4-provider-model-drop-down.md` as well. Recover it e.g. from session logs. We want something similar to Artificial Analysis model selector. This is a demanding task, use the most competent model.
 
 ## Scheduled
 
