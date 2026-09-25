@@ -495,10 +495,12 @@ function renderModelPicker() {
     total += keys.length;
     const shown = matchingKeys(provider);
     if (!shown.length) continue;
+    // The header checkbox acts on the shown models, so its state follows them too.
+    const shownOn = shown.filter((k) => state.selectedModels.has(k)).length;
     const p = esc(provider);
     html += `<details${searching || openProviders.has(provider) ? " open" : ""} data-group="${p}"><summary>` +
       `<input type="checkbox" data-provider="${p}" aria-label="All ${p} models"` +
-      (on === keys.length ? " checked" : on ? " data-mixed" : "") + `> ${p}` +
+      (shownOn === shown.length ? " checked" : shownOn ? " data-mixed" : "") + `> ${p}` +
       `<span class="count">${on}/${keys.length}</span></summary>` +
       shown.map((k) => `<label><input type="checkbox" data-key="${esc(k)}"` +
         (state.selectedModels.has(k) ? " checked" : "") + `> ${esc(k.slice(provider.length + 2))}</label>`).join("") +
