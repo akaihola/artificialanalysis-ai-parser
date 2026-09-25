@@ -41,6 +41,7 @@ async function page(data = models, metric = added[0]) {
       addEventListener: (name, fn) => { events[name] = fn; },
       setAttribute: (name, value) => { attributes[name] = value; },
       getAttribute: name => attributes[name],
+      focus() {}, contains: () => true, querySelector: () => null,
       getBoundingClientRect: () => ({ left: 0, top: 0, width: 1000, height: 800 }),
       querySelectorAll(selector) {
         if (selector !== 'circle[data-i]') return [];
@@ -55,9 +56,10 @@ async function page(data = models, metric = added[0]) {
   const radios = metrics.map(value => Object.assign(element(), { value }));
   node('chart').parentElement = node('chart-card');
   node('table-view').hidden = true;
+  node('model-picker').hidden = true;
   const location = new URL(`https://example.test/intelligence-vs-cost.html?metric=${metric}`);
   const context = vm.createContext({
-    URL, URLSearchParams, location, setTimeout, clearTimeout,
+    URL, URLSearchParams, location, setTimeout, clearTimeout, CSS: { escape: s => s },
     history: { replaceState: (_, __, url) => { location.href = url.href; } },
     window: { addEventListener() {} },
     document: {
@@ -99,29 +101,70 @@ for (const metric of added) {
     assert.equal(p.location.searchParams.get('metric'), metric);
   });
 
-  test(`${metric}: model/provider selectors and response-time filter`, async () => {
-    const p = await page(models, metric);
-    assert.match(p.node('provider-select').innerHTML, /<option value="OpenAI"/);
-    assert.match(p.node('model-select').innerHTML, /<option value="OpenAI::Best"/);
-    p.node('model-search').value = 'best';
-    p.node('model-search').events.input();
-    assert.match(p.node('model-select').innerHTML, /OpenAI::Best/);
-    assert.doesNotMatch(p.node('model-select').innerHTML, /OpenAI::Zero/);
-    p.node('e2e-number').value = '25';
-    p.node('e2e-number').events.input();
-    assert.doesNotMatch(p.table(), /<td>Best<\/td>/);
-    assert.match(p.table(), /<td>Zero<\/td>/); // Unknown response time remains visible.
-    p.state.selectedModels.delete('OpenAI::Zero');
-    p.render();
-    assert.doesNotMatch(p.table(), /<td>Zero<\/td>/);
-    p.node('clear-models').events.click();
-    assert.equal(p.table(), '');
-    assert.doesNotMatch(p.node('chart').innerHTML, /NaN|Infinity/);
-    models.forEach(m => p.state.selectedModels.add(`OpenAI::${m.name}`));
-    p.render();
-    assert.match(p.table(), /<td>Zero<\/td>/);
-    assert.match(p.table(), /<td>Dominated<\/td>/);
-  });
+test(`${metric}: grouped model picker and response-time filter`, async () => {
+  const data = [...models, model('Best (high)', 2.5, 91, 40), { ...model('Gemini', 1.5, 60, 5), provider: 'Google' }];
+  const p = await page(data, metric);
+  const groups = () => p.node('model-groups').innerHTML;
+  const label = () => p.node('model-picker-toggle').textContent;
+  const toggle = (dataset, checked) => p.node('model-groups').events.change({ target: { dataset, checked } });
+  const search = (value) => { p.node('model-search').value = value; p.node('model-search').events.input(); };
+
+  // Every model starts selected; providers are grouped and sorted.
+  assert.equal(label(), 'Models: 5 of 5 selected');
+  assert(groups().indexOf('data-provider="Google"') < groups().indexOf('data-provider="OpenAI"'));
+  assert.match(groups(), /data-key="OpenAI::Best"[^>]* checked/);
+  assert.doesNotMatch(groups(), /Best \(high\)/); // Reasoning levels share one row.
+
+  p.node('model-picker-toggle').events.click();
+  assert.equal(p.node('model-picker').hidden, false);
+  assert.equal(p.node('model-picker-toggle').getAttribute('aria-expanded'), 'true');
+
+  // One model row hides all its reasoning levels; the provider becomes mixed.
+  toggle({ key: 'OpenAI::Best' }, false);
+  assert.doesNotMatch(p.table(), /<td>Best/);
+  assert.equal(label(), 'Models: 4 of 5 selected');
+  assert.match(groups(), /data-provider="OpenAI"[^>]* data-mixed/);
+  assert.match(groups(), />3\/4</);
+
+  // A provider header toggles every model of that provider.
+  toggle({ provider: 'OpenAI' }, true);
+  assert.match(p.table(), /<td>Best \(high\)<\/td>/);
+  toggle({ provider: 'OpenAI' }, false);
+  assert.doesNotMatch(p.table(), /<td>(Zero|Best|Dominated)<\/td>/);
+  assert.match(p.table(), /<td>Gemini<\/td>/);
+  toggle({ provider: 'OpenAI' }, true);
+
+  // Search matches model and provider names; bulk actions apply to matches only.
+  search('gem');
+  assert.doesNotMatch(groups(), /data-provider="OpenAI"/);
+  p.node('clear-models').events.click();
+  assert.doesNotMatch(p.table(), /<td>Gemini<\/td>/);
+  assert.match(p.table(), /<td>Zero<\/td>/);
+  p.node('select-all-models').events.click();
+  assert.match(p.table(), /<td>Gemini<\/td>/);
+  search('openai');
+  assert.match(groups(), /data-key="OpenAI::Zero"/);
+  assert.doesNotMatch(groups(), /data-provider="Google"/);
+  search('nothing-matches');
+  assert.match(groups(), /No models match/);
+  search('');
+
+  p.node('e2e-number').value = '25';
+  p.node('e2e-number').events.input();
+  assert.doesNotMatch(p.table(), /<td>Best<\/td>/);
+  assert.match(p.table(), /<td>Zero<\/td>/); // Unknown response time remains visible.
+  p.state.selectedModels.delete('OpenAI::Zero');
+  p.render();
+  assert.doesNotMatch(p.table(), /<td>Zero<\/td>/);
+  p.node('clear-models').events.click();
+  assert.equal(p.table(), '');
+  assert.equal(label(), 'Models: 0 of 5 selected');
+  assert.doesNotMatch(p.node('chart').innerHTML, /NaN|Infinity/);
+  p.node('select-all-models').events.click();
+  assert.match(p.table(), /<td>Zero<\/td>/);
+  assert.match(p.table(), /<td>Dominated<\/td>/);
+  assert.equal(label(), 'Models: 5 of 5 selected');
+});
 
   test(`${metric}: older JSON and missing metadata remain usable`, async () => {
     const old = models.map(m => Object.fromEntries(Object.entries(m).filter(([k]) => !k.startsWith('livebench'))));

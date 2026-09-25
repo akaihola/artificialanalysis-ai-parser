@@ -91,9 +91,41 @@
     cursor: pointer;
   }
   .filters button[aria-pressed="true"] { background: var(--series-1); color: #fff; border-color: transparent; }
-  .model-filters { flex: 1 1 100%; display: flex; flex-wrap: wrap; gap: 8px 10px; align-items: center; }
-  .model-filters label { display: flex; align-items: center; gap: 8px; }
-  .model-filters select, .model-filters input[type="search"] { min-width: 180px; }
+  /* Model picker: one button that opens a searchable list grouped by provider. */
+  .model-picker { position: relative; }
+  .model-picker-panel {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    z-index: 10;
+    width: min(380px, calc(100vw - 64px));
+    max-height: min(460px, 65vh);
+    display: flex;
+    flex-direction: column;
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  }
+  .model-picker-panel[hidden] { display: none; }
+  .model-picker-head { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px; border-bottom: 1px solid var(--border); }
+  .model-picker-head input[type="search"] {
+    flex: 1 1 100%;
+    padding: 5px 8px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--page);
+    color: var(--text-primary);
+    font: inherit;
+  }
+  .model-groups { overflow-y: auto; padding: 4px 0; }
+  .model-groups summary { display: flex; align-items: center; gap: 8px; padding: 4px 10px; cursor: pointer; font-weight: 600; }
+  .model-groups summary::before { content: "▸"; width: 10px; color: var(--text-muted); }
+  .model-groups details[open] > summary::before { content: "▾"; }
+  .model-groups summary .count { margin-left: auto; color: var(--text-muted); font-weight: 400; font-variant-numeric: tabular-nums; }
+  .model-groups label { padding: 2px 10px 2px 32px; }
+  .model-groups input { accent-color: var(--series-1); }
+  .model-groups .empty { padding: 8px 10px; color: var(--text-secondary); }
 
   .status { color: var(--text-secondary); font-size: 13px; margin: 0 0 8px; }
 
@@ -184,6 +216,19 @@
 
   <div class="card" id="chart-card">
   <div class="filters" id="filter-row">
+    <div class="model-picker" id="model-filters">
+      <button id="model-picker-toggle" type="button" aria-haspopup="true" aria-expanded="false"
+              aria-controls="model-picker">Models</button>
+      <div class="model-picker-panel" id="model-picker" role="dialog" aria-label="Select models" hidden>
+        <div class="model-picker-head">
+          <input id="model-search" type="search" placeholder="Search models or providers"
+                 aria-label="Search models or providers">
+          <button id="select-all-models" type="button">Select all</button>
+          <button id="clear-models" type="button">Clear all</button>
+        </div>
+        <div class="model-groups" id="model-groups"></div>
+      </div>
+    </div>
     <label for="claude-plan-select">Claude plan</label>
     <select id="claude-plan-select" aria-label="Claude subscription plan"></select>
     <label for="codex-plan-select">Codex plan</label>
@@ -205,15 +250,6 @@
     </div>
     <label><input type="checkbox" id="show-deprecated"> Show deprecated models</label>
     <label><input type="checkbox" id="pareto-y-zoom"> Zoom Y axis to Pareto line</label>
-    <button id="clear-models" type="button">Clear models</button>
-    <div class="model-filters" id="model-filters" aria-label="Model visibility filters">
-      <label for="provider-select">Provider</label>
-      <select id="provider-select" aria-label="Provider"></select>
-      <label for="model-select">Models</label>
-      <select id="model-select" aria-label="Models" multiple size="1"></select>
-      <label for="model-search">Filter models</label>
-      <input id="model-search" type="search" placeholder="Search models" aria-label="Filter models">
-    </div>
     <button id="table-toggle" aria-pressed="false">Table view</button>
     <button id="fullscreen-toggle" aria-pressed="false" aria-label="Open chart in full screen" title="Open chart in full screen">⤢</button>
   </div>
@@ -421,76 +457,88 @@ fetch("models.json")
 const slider = document.getElementById("e2e-slider");
 const numBox = document.getElementById("e2e-number");
 const modelFilters = document.getElementById("model-filters");
-const providerSelect = document.getElementById("provider-select");
-const modelSelect = document.getElementById("model-select");
+const modelPickerToggle = document.getElementById("model-picker-toggle");
+const modelPicker = document.getElementById("model-picker");
+const modelGroupsEl = document.getElementById("model-groups");
 const modelSearch = document.getElementById("model-search");
 const baseModelName = (m) => m.name.replace(/\s+\([^)]*\)$/, "");
 const modelKey = (provider, name) => provider + "::" + name;
-let selectedProvider = "";
+const modelGroups = new Map();  // provider -> sorted base model names
+const openProviders = new Set();  // groups expanded by the user
 
 function buildModelFilters() {
-  const groups = new Map();
+  const names = new Map();
   for (const m of state.models) {
-    const key = baseModelName(m);
-    if (!groups.has(m.provider)) groups.set(m.provider, new Map());
-    groups.get(m.provider).set(key, true);
-    state.selectedModels.add(modelKey(m.provider, key));
+    const name = baseModelName(m);
+    if (!names.has(m.provider)) names.set(m.provider, new Set());
+    names.get(m.provider).add(name);
+    state.selectedModels.add(modelKey(m.provider, name));
   }
-  const providers = [...groups.keys()].sort();
-  selectedProvider = groups.has(selectedProvider) ? selectedProvider : providers[0] || "";
-  providerSelect.innerHTML = providers.map((provider) =>
-    '<option value="' + esc(provider) + '"' + (provider === selectedProvider ? " selected" : "") + ">" +
-    esc(provider) + "</option>").join("");
-  syncModelOptions(groups);
-  syncModelFilters();
+  modelGroups.clear();
+  for (const provider of [...names.keys()].sort()) modelGroups.set(provider, [...names.get(provider)].sort());
+  renderModelPicker();
 }
-function syncModelOptions(groups) {
-  const models = groups.get(selectedProvider) || new Map();
+// Keys of a provider's models that match the search. A provider name match keeps all its models.
+function matchingKeys(provider) {
   const query = modelSearch.value.trim().toLowerCase();
-  modelSelect.innerHTML = [...models.keys()].sort().filter((name) =>
-    !query || name.toLowerCase().includes(query)).map((name) => {
-    const key = modelKey(selectedProvider, name);
-    return '<option value="' + esc(key) + '"' +
-      (state.selectedModels.has(key) ? " selected" : "") + ">" + esc(name) + "</option>";
-  }).join("");
+  const all = !query || provider.toLowerCase().includes(query);
+  return modelGroups.get(provider)
+    .filter((name) => all || name.toLowerCase().includes(query))
+    .map((name) => modelKey(provider, name));
 }
-function syncModelFilters() {
-  [...modelSelect.options].forEach((option) => {
-    option.selected = state.selectedModels.has(option.value);
-  });
+function renderModelPicker() {
+  const searching = modelSearch.value.trim() !== "";
+  let total = 0, html = "";
+  for (const provider of modelGroups.keys()) {
+    const keys = modelGroups.get(provider).map((name) => modelKey(provider, name));
+    const on = keys.filter((k) => state.selectedModels.has(k)).length;
+    total += keys.length;
+    const shown = matchingKeys(provider);
+    if (!shown.length) continue;
+    const p = esc(provider);
+    html += `<details${searching || openProviders.has(provider) ? " open" : ""} data-group="${p}"><summary>` +
+      `<input type="checkbox" data-provider="${p}" aria-label="All ${p} models"` +
+      (on === keys.length ? " checked" : on ? " data-mixed" : "") + `> ${p}` +
+      `<span class="count">${on}/${keys.length}</span></summary>` +
+      shown.map((k) => `<label><input type="checkbox" data-key="${esc(k)}"` +
+        (state.selectedModels.has(k) ? " checked" : "") + `> ${esc(k.slice(provider.length + 2))}</label>`).join("") +
+      "</details>";
+  }
+  modelGroupsEl.innerHTML = html || '<p class="empty">No models match.</p>';
+  modelGroupsEl.querySelectorAll("input[data-mixed]").forEach((box) => { box.indeterminate = true; });
+  modelPickerToggle.textContent = `Models: ${state.selectedModels.size} of ${total} selected`;
 }
-providerSelect.addEventListener("change", () => {
-  selectedProvider = providerSelect.value;
-  const groups = new Map();
-  for (const m of state.models) {
-    const key = baseModelName(m);
-    if (!groups.has(m.provider)) groups.set(m.provider, new Map());
-    groups.get(m.provider).set(key, true);
-  }
-  syncModelOptions(groups);
-});
-modelSearch.addEventListener("input", () => {
-  const groups = new Map();
-  for (const m of state.models) {
-    const key = baseModelName(m);
-    if (!groups.has(m.provider)) groups.set(m.provider, new Map());
-    groups.get(m.provider).set(key, true);
-  }
-  syncModelOptions(groups);
-});
-modelSelect.addEventListener("change", () => {
-  const visible = new Set([...modelSelect.selectedOptions].map((option) => option.value));
-  for (const option of modelSelect.options) {
-    visible.has(option.value) ? state.selectedModels.add(option.value) : state.selectedModels.delete(option.value);
-  }
-  syncModelFilters();
+function setModelPickerOpen(open) {
+  modelPicker.hidden = !open;
+  modelPickerToggle.setAttribute("aria-expanded", String(open));
+  if (open) modelSearch.focus();
+}
+function setModels(keys, on) {
+  for (const k of keys) on ? state.selectedModels.add(k) : state.selectedModels.delete(k);
+  renderModelPicker();
   render();
+}
+modelPickerToggle.addEventListener("click", () => setModelPickerOpen(modelPicker.hidden));
+document.addEventListener("click", (e) => {
+  if (!modelPicker.hidden && !modelFilters.contains(e.target)) setModelPickerOpen(false);
 });
-document.getElementById("clear-models").addEventListener("click", () => {
-  state.selectedModels.clear();
-  syncModelFilters();
-  render();
+modelSearch.addEventListener("input", renderModelPicker);
+modelGroupsEl.addEventListener("toggle", (e) => {
+  const provider = e.target.dataset.group;
+  if (modelSearch.value.trim()) return;  // search expands every group; do not remember that
+  e.target.open ? openProviders.add(provider) : openProviders.delete(provider);
+}, true);
+modelGroupsEl.addEventListener("change", (e) => {
+  const { provider, key } = e.target.dataset;
+  setModels(key ? [key] : matchingKeys(provider), e.target.checked);
+  // Re-rendering replaced the checkbox; keep keyboard focus on its replacement.
+  const attr = key ? `data-key="${CSS.escape(key)}"` : `data-provider="${CSS.escape(provider)}"`;
+  modelGroupsEl.querySelector(`input[${attr}]`)?.focus();
 });
+document.getElementById("select-all-models").addEventListener("click", () =>
+  setModels([...modelGroups.keys()].flatMap(matchingKeys), true));
+document.getElementById("clear-models").addEventListener("click", () =>
+  setModels([...modelGroups.keys()].flatMap(matchingKeys), false));
 
 // The slider is linear in log(time). Small values get fine steps this way.
 function sliderToSeconds(v) {
@@ -587,6 +635,11 @@ fullscreenButton.addEventListener("click", () => {
 });
 document.addEventListener("fullscreenchange", syncChartFullscreen);
 document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" && !modelPicker.hidden) {
+    setModelPickerOpen(false);
+    modelPickerToggle.focus();
+    return;
+  }
   const active = document.activeElement;
   const typing = active && (active.tagName === "INPUT" || active.tagName === "SELECT");
   if (e.key === "Escape" && !typing && isChartFullscreen()) exitChartFullscreen();
