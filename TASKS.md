@@ -14,37 +14,36 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 ## In Progress
 
-## Completed
+## Completed / Accepted
 
-- [*] Task [4] tried to condense provider and model drop-downs into a good model
+- [ ] [*] Task [4] tried to condense provider and model drop-downs into a good model
   selection UI. It utterly failed, and we lost
   `docs/tasks/4-provider-model-drop-down.md` as well. Recover it e.g. from session logs.
   We want something similar to Artificial Analysis model selector. This is a demanding
   task, use the most competent model.
 
-- [1] Add provider and model selectors with clear-all and grouped visibility toggles.
+- [ ] [1] Add provider and model selectors with clear-all and grouped visibility toggles.
 
-- [2] Fix the renamed Terminal-Bench v4.0 field that left the chart and table empty.
+- [ ] [2] Fix the renamed Terminal-Bench v4.0 field that left the chart and table empty.
 
-- [3] Include more coding benchmarks based on the coding benchmark research.
+- [ ] [3] Include more coding benchmarks based on the coding benchmark research.
 
-- [*] Add Terminal-Bench v4.0 as a selectable benchmark
+- [ ] [*] Add Terminal-Bench v4.0 as a selectable benchmark
 
-- [*] Restore the Coding Pareto graph and table with SciCode
+- [ ] [*] Restore the Coding Pareto graph and table with SciCode
 
-- [*] Move the Full screen button to the chart top-right, include filters in full-screen
+- [ ] [*] Move the Full screen button to the chart top-right, include filters in full-screen
   mode, and use the full window height
 
-- [*] Adjust max response time using horizontal scrolling on a touchpad
+- [ ] [*] Adjust max response time using horizontal scrolling on a touchpad
 
-- [*] In a GitHub workflow, regenerate `models.json` daily and commit any changes to
+- [ ] [*] In a GitHub workflow, regenerate `models.json` daily and commit any changes to
   `master`
 
-- [*] Add Pareto chart Y-axis zoom
+- [ ] [*] Add Pareto chart Y-axis zoom
 
-## Accepted
 
-- [4] Condense provider/model selection into drop-down menus.
+- [x] [4] Condense provider/model selection into drop-down menus.
 
 [1]: docs/tasks/1-provider-and-model-selectors.md
 [2]: docs/tasks/2-terminal-bench-field-parsing.md
@@ -78,10 +77,18 @@ same time.
 
 ### TASKS.md maintenance sessions
 
-- Each backlog item must be prefixed with either
+- In `## Completed / Accepted`, `- [ ] [N] summary` or `- [ ] [*] summary`
+  means completed work awaiting user acceptance. `- [x] [N] summary` or
+  `- [x] [*] summary` means the user has accepted it. Only user acceptance
+  changes `[ ]` to `[x]`; completion, tests and deployment do not.
+- Move newly completed issues into `## Completed / Accepted` with `[ ]`.
+- During the next maintenance run, remove only `[x]` issues from this section,
+  plus their unused description files and reference-style links. Keep `[ ]`
+  issues and any files or links still referenced by another issue.
+- Each issue must retain either
     - a numbered reference-style link (e.g. `[1]`) to a description file, or
     - `[*]` to indicate no description file is needed for a simple task.
-- Link references are listed between `## Completed` and `## Rules`.
+- Link references are listed between `## Completed / Accepted` and `## Rules`.
 - Keep simple tasks inline with `[*]`. Extract long descriptions into
   `docs/tasks/N-issue-description.md`, preserving requirements, rationale, examples, and
   acceptance criteria; leave a concise summary and `[N]` link here.
@@ -92,15 +99,12 @@ same time.
 - Verify status changes against repository history and available task-workflow evidence
   before moving issues.
 - Any completed tasks which haven't yet been moved from `## In Progress` to
-  `## Completed` should be moved there.
+  `## Completed / Accepted` should be moved there.
 - Any in progress tasks which haven't yet been moved from `## Ordered backlog` or
   `## Scheduled` to `## In Progress` should be moved there.
-- Remove all issues the user has moved to the `## Accepted` section along with any
-  related description files in `docs/tasks/` and the reference-style links pointing to
-  them.
 - Ensure there are no duplicate sections, and that they are in the correct order:
   `## Unverified proposals` -> `## Ordered backlog` -> `## Scheduled` ->
-  `## In Progress` -> `## Completed` -> `## Accepted` -> `## Rules`.
+  `## In Progress` -> `## Completed / Accepted` -> `## Rules`.
 
 ### Modifying issues
 
@@ -109,9 +113,9 @@ same time.
     - indented `- Depends on: [N]` bullets in TASKS.md, and
     - YAML frontmatter in description files.
 - Ensure backlog order respects dependencies.
-- When you move an issue to a different section, move its lines without a change. Keep
-  the prefix, the bullet text and the line wrapping the same. Git can then see the move,
-  and concurrent moves do not cause a conflict.
+- When you move an issue, preserve its identifier, text and line wrapping.
+  Change only the status checkbox when completion or user acceptance requires it.
+  This keeps moves identifiable in Git and reduces avoidable conflicts.
 
 ### Workflow for new issue completion
 
@@ -137,7 +141,8 @@ same time.
 3. Merge and deploy (typically by last steps of a task workflow)
 
 - Merge the rebased branch on `master`, and remove the worktree and branch.
-- Move the issue from `## In Progress` to `## Completed` in TASKS.md and commit.
+- Move the issue from `## In Progress` to `## Completed / Accepted` in TASKS.md with `[ ]`,
+  pending user acceptance, and commit.
 - Do any deployment steps if defined in the general development workflow.
 
 When TASKS.md conflicts during a rebase or merge:
