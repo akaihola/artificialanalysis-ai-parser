@@ -4,6 +4,10 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 ## Ordered backlog
 
+- [*] Task [4] and Kandev task 2feedf9a-4272-4569-aaaa-f7af919e5f3c tried to fix this.
+  It now works correctly on Chromium, but the `Models` drop-down doesn't open on
+  Firefox. Also, there needs to be a way to select/deselect all models for a provider
+  with just one or two clicks.
 
 ## Scheduled
 
@@ -11,7 +15,11 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 ## Completed
 
-- [*] Task [4] tried to condense provider and model drop-downs into a good model selection UI. It utterly failed, and we lost `docs/tasks/4-provider-model-drop-down.md` as well. Recover it e.g. from session logs. We want something similar to Artificial Analysis model selector. This is a demanding task, use the most competent model.
+- [*] Task [4] tried to condense provider and model drop-downs into a good model
+  selection UI. It utterly failed, and we lost
+  `docs/tasks/4-provider-model-drop-down.md` as well. Recover it e.g. from session logs.
+  We want something similar to Artificial Analysis model selector. This is a demanding
+  task, use the most competent model.
 
 - [1] Add provider and model selectors with clear-all and grouped visibility toggles.
 
@@ -23,13 +31,13 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 - [*] Restore the Coding Pareto graph and table with SciCode
 
-- [*] Move the Full screen button to the chart top-right, include filters in
-  full-screen mode, and use the full window height
+- [*] Move the Full screen button to the chart top-right, include filters in full-screen
+  mode, and use the full window height
 
 - [*] Adjust max response time using horizontal scrolling on a touchpad
 
-- [*] In a GitHub workflow, regenerate `models.json` daily and commit any
-  changes to `master`
+- [*] In a GitHub workflow, regenerate `models.json` daily and commit any changes to
+  `master`
 
 - [*] Add Pareto chart Y-axis zoom
 
@@ -70,18 +78,18 @@ same time.
 ### TASKS.md maintenance sessions
 
 - Each backlog item must be prefixed with either
-  - a numbered reference-style link (e.g. `[1]`) to a description file, or
-  - `[*]` to indicate no description file is needed for a simple task.
+    - a numbered reference-style link (e.g. `[1]`) to a description file, or
+    - `[*]` to indicate no description file is needed for a simple task.
 - Link references are listed between `## Completed` and `## Rules`.
 - Keep simple tasks inline with `[*]`. Extract long descriptions into
-  `docs/tasks/N-issue-description.md`, preserving requirements, rationale, examples,
-  and acceptance criteria; leave a concise summary and `[N]` link here.
+  `docs/tasks/N-issue-description.md`, preserving requirements, rationale, examples, and
+  acceptance criteria; leave a concise summary and `[N]` link here.
 - Reuse an existing task number and description file when available. For a new
-  description, choose the next unused positive integer after the highest existing
-  task number. Match the reference label to the filename prefix, and check both
-  this tracker and `docs/tasks/` before assigning it.
-- Verify status changes against repository history and available task-workflow
-  evidence before moving issues.
+  description, choose the next unused positive integer after the highest existing task
+  number. Match the reference label to the filename prefix, and check both this tracker
+  and `docs/tasks/` before assigning it.
+- Verify status changes against repository history and available task-workflow evidence
+  before moving issues.
 - Any completed tasks which haven't yet been moved from `## In Progress` to
   `## Completed` should be moved there.
 - Any in progress tasks which haven't yet been moved from `## Ordered backlog` or
@@ -97,8 +105,8 @@ same time.
 
 - Ensure dependencies between issues are correctly updated.
 - State dependencies using
-  - indented `- Depends on: [N]` bullets in TASKS.md, and
-  - YAML frontmatter in description files.
+    - indented `- Depends on: [N]` bullets in TASKS.md, and
+    - YAML frontmatter in description files.
 - Ensure backlog order respects dependencies.
 - When you move an issue to a different section, move its lines without a change. Keep
   the prefix, the bullet text and the line wrapping the same. Git can then see the move,
