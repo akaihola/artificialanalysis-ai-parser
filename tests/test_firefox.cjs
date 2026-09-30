@@ -1,6 +1,6 @@
 const { createServer } = require('node:http');
 const { test } = require('node:test');
-const { join } = require('node:path');
+const { join, sep } = require('node:path');
 
 let firefox;
 try { ({ firefox } = require('playwright')); } catch {}
@@ -10,7 +10,7 @@ test('Firefox model picker, provider bulk toggle and URL restore', { skip: !fire
   const root = join(__dirname, '..');
   const server = createServer((req, res) => {
     const file = join(root, new URL(req.url, 'http://localhost').pathname.slice(1));
-    if (!file.startsWith(root)) { res.writeHead(403).end(); return; }
+    if (!file.startsWith(root + sep)) { res.writeHead(403).end(); return; }
     try {
       res.setHeader('Content-Type', file.endsWith('.json') ? 'application/json' : 'text/html');
       res.end(readFileSync(file));
@@ -39,6 +39,8 @@ test('Firefox model picker, provider bulk toggle and URL restore', { skip: !fire
     await page.waitForFunction(() => document.querySelector('#model-picker-toggle')?.textContent.includes('1 of 3 selected'));
 
     await page.getByRole('button', { name: /^Models/ }).click();
+    if (await page.locator('input[data-provider="OpenAI"]').isChecked()) throw new Error('provider models were not cleared');
+    if (!(await page.locator('input[data-provider="Google"]').isChecked())) throw new Error('other provider selection changed');
     await page.locator('input[data-provider="OpenAI"]').click();
     await page.waitForFunction(() => document.querySelector('#model-picker-toggle')?.textContent.includes('3 of 3 selected'));
     if (!(await page.locator('input[data-key="OpenAI::Alpha"]').isVisible())) {
@@ -50,6 +52,12 @@ test('Firefox model picker, provider bulk toggle and URL restore', { skip: !fire
     await page.reload();
     await page.waitForFunction(() => document.querySelector('#model-picker-toggle')?.textContent.includes('2 of 3 selected'));
     if (!new URL(partialUrl).searchParams.has('models')) throw new Error('partial selection was not serialized');
+    await page.getByRole('button', { name: /^Models/ }).click();
+    if (!(await page.locator('input[data-key="OpenAI::Alpha"]').isVisible())) {
+      await page.locator('details[data-group="OpenAI"] > summary').click();
+    }
+    if (await page.locator('input[data-key="OpenAI::Alpha"]').isChecked()) throw new Error('deselected model was not restored');
+    if (!(await page.locator('input[data-key="OpenAI::Beta"]').isChecked())) throw new Error('selected model was not restored');
   } finally {
     await browser?.close();
     server.close();
