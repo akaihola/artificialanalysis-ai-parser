@@ -4,15 +4,15 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 ## Ordered backlog
 
+## Scheduled
+
+## In Progress
+
 - [*] Task [4] and Kandev task 2feedf9a-4272-4569-aaaa-f7af919e5f3c tried to fix this.
   It now works correctly on Chromium, but the `Models` drop-down doesn't open on
   Firefox. Also, there needs to be a way to select/deselect all models for a provider
   with just one or two clicks. And the set of selected models needs to be present in the
   URL as well, preferably in a condensed value.
-
-## Scheduled
-
-## In Progress
 
 ## Completed / Accepted
 
