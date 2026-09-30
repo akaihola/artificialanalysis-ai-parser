@@ -24,7 +24,7 @@ const models = [model('Zero', 1, 0, null), model('Best', 2, 90, 50),
   model('Dominated', 3, 50, 20), model('Missing', 4, null, 10)];
 
 // Only the DOM methods used by this page; production functions and handlers run unchanged.
-async function page(data = models, metric = added[0]) {
+async function page(data = models, metric = added[0], query = `metric=${metric}`) {
   function element() {
     const attributes = {}, events = {};
     return {
@@ -57,7 +57,7 @@ async function page(data = models, metric = added[0]) {
   node('chart').parentElement = node('chart-card');
   node('table-view').hidden = true;
   node('model-picker').hidden = true;
-  const location = new URL(`https://example.test/intelligence-vs-cost.html?metric=${metric}`);
+  const location = new URL(`https://example.test/intelligence-vs-cost.html?${query}`);
   const context = vm.createContext({
     URL, URLSearchParams, location, setTimeout, clearTimeout, CSS: { escape: s => s },
     history: { replaceState: (_, __, url) => { location.href = url.href; } },
@@ -115,9 +115,15 @@ for (const metric of added) {
     assert.match(groups(), /data-key="OpenAI::Best"[^>]* checked/);
     assert.doesNotMatch(groups(), /Best \(high\)/); // Reasoning levels share one row.
 
-    p.node('model-picker-toggle').events.click();
+    p.node('model-picker-toggle').events.click({ preventDefault() {}, stopPropagation() {} });
     assert.equal(p.node('model-picker').hidden, false);
     assert.equal(p.node('model-picker-toggle').getAttribute('aria-expanded'), 'true');
+
+    // Provider checkboxes select and clear a whole group in one click.
+    toggle({ provider: 'OpenAI' }, false);
+    assert.equal([...p.state.selectedModels].some(key => key.startsWith('OpenAI::')), false);
+    toggle({ provider: 'OpenAI' }, true);
+    assert.equal([...p.state.selectedModels].filter(key => key.startsWith('OpenAI::')).length, 4);
 
     // One model row hides all its reasoning levels; the provider becomes mixed.
     toggle({ key: 'OpenAI::Best' }, false);
@@ -169,6 +175,27 @@ for (const metric of added) {
     assert.match(p.table(), /<td>Zero<\/td>/);
     assert.match(p.table(), /<td>Dominated<\/td>/);
     assert.equal(label(), 'Models: 5 of 5 selected');
+  });
+
+  test(`${metric}: compact model selection URL restores the selected set`, async () => {
+    const data = [...models, { ...model('Gemini', 1.5, 60, 5), provider: 'Google' }];
+    const p = await page(data, metric);
+    p.node('model-picker-toggle').events.click({ preventDefault() {}, stopPropagation() {} });
+    p.node('model-groups').events.change({ target: { dataset: { key: 'OpenAI::Best' }, checked: false } });
+    const encoded = p.location.searchParams.get('models');
+    assert(encoded);
+    assert(encoded.length < [...p.state.selectedModels].join(',').length);
+
+    const restored = await page(data, metric, p.location.search.slice(1));
+    assert.deepEqual([...restored.state.selectedModels].sort(), [...p.state.selectedModels].sort());
+    assert.doesNotMatch(restored.table(), /<td>Best<\/td>/);
+    assert.match(restored.table(), /<td>Zero<\/td>/);
+
+    restored.node('clear-models').events.click();
+    assert.equal(restored.state.selectedModels.size, 0);
+    assert.equal(restored.location.searchParams.get('models'), '00');
+    restored.node('select-all-models').events.click();
+    assert.equal(restored.location.searchParams.has('models'), false);
   });
 
   test(`${metric}: older JSON and missing metadata remain usable`, async () => {

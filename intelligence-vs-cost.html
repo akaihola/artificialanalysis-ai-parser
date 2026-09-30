@@ -92,7 +92,7 @@
   }
   .filters button[aria-pressed="true"] { background: var(--series-1); color: #fff; border-color: transparent; }
   /* Model picker: one button that opens a searchable list grouped by provider. */
-  .model-picker { position: relative; }
+  .model-picker { position: relative; z-index: 1; }
   .model-picker-panel {
     position: absolute;
     top: calc(100% + 6px);
@@ -393,7 +393,7 @@ const state = {
 
 const FILTER_PARAMS = {
   metric: "metric", maxE2e: "max_response_time",
-  claudePlan: "claude_plan", codexPlan: "codex_plan",
+  claudePlan: "claude_plan", codexPlan: "codex_plan", models: "models",
 };
 const urlParams = new URLSearchParams(location.search);
 const urlMetric = urlParams.get(FILTER_PARAMS.metric);
@@ -476,7 +476,21 @@ function buildModelFilters() {
   }
   modelGroups.clear();
   for (const provider of [...names.keys()].sort()) modelGroups.set(provider, [...names.get(provider)].sort());
+  restoreModelSelection();
   renderModelPicker();
+}
+function modelKeys() {
+  return [...modelGroups].flatMap(([provider, names]) => names.map((name) => modelKey(provider, name)));
+}
+function restoreModelSelection() {
+  const value = urlParams.get(FILTER_PARAMS.models);
+  if (value == null) return;
+  const keys = modelKeys();
+  if (!/^[0-9a-f]*$/i.test(value) || value.length !== Math.ceil(keys.length / 4)) return;
+  state.selectedModels.clear();
+  keys.forEach((key, i) => {
+    if (parseInt(value[Math.floor(i / 4)], 16) & (1 << (i % 4))) state.selectedModels.add(key);
+  });
 }
 // Keys of a provider's models that match the search. A provider name match keeps all its models.
 function matchingKeys(provider) {
@@ -517,10 +531,15 @@ function setModelPickerOpen(open) {
 }
 function setModels(keys, on) {
   for (const k of keys) on ? state.selectedModels.add(k) : state.selectedModels.delete(k);
+  syncUrl();
   renderModelPicker();
   render();
 }
-modelPickerToggle.addEventListener("click", () => setModelPickerOpen(modelPicker.hidden));
+modelPickerToggle.addEventListener("click", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  setModelPickerOpen(modelPicker.hidden);
+});
 document.addEventListener("click", (e) => {
   if (!modelPicker.hidden && !modelFilters.contains(e.target)) setModelPickerOpen(false);
 });
@@ -560,6 +579,18 @@ function syncUrl() {
   url.searchParams.set(FILTER_PARAMS.codexPlan, state.plans.codex.id);
   if (isFinite(state.maxE2e)) url.searchParams.set(FILTER_PARAMS.maxE2e, state.maxE2e);
   else url.searchParams.delete(FILTER_PARAMS.maxE2e);
+  const keys = modelKeys();
+  if (keys.length && state.selectedModels.size !== keys.length) {
+    let value = "";
+    for (let i = 0; i < keys.length; i += 4) {
+      let nibble = 0;
+      for (let bit = 0; bit < 4 && i + bit < keys.length; bit++) {
+        if (state.selectedModels.has(keys[i + bit])) nibble |= 1 << bit;
+      }
+      value += nibble.toString(16);
+    }
+    url.searchParams.set(FILTER_PARAMS.models, value);
+  } else url.searchParams.delete(FILTER_PARAMS.models);
   history.replaceState(null, "", url);
 }
 
