@@ -52,7 +52,8 @@ Screenshots and the extracted bundle were kept out of the repository
 - Plans apply by lab: Anthropic models get the Claude plan; OpenAI models that are not
   open-weights get the Codex plan (gpt-oss stays at API price).
 - Do not fetch AA model pages (tokens per task and time per task are not collected).
-- Models with zero price stay excluded, as before.
+- Models priced zero at every host stay excluded. A model with a $0 endpoint and a
+  priced host is kept, using the priced host.
 
 ### Page layout
 
