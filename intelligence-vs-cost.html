@@ -183,6 +183,8 @@
   .comparison-table thead th { color: var(--fg-3); font-size: 11px; border-bottom: 1px solid var(--line-2); }
   .comparison-table th:first-child { padding-left: 0; color: var(--fg-2); text-align: left; }
   .comparison-table td:last-child { font-weight: 550; }
+  .comparison-table tbody th { white-space: nowrap; }
+  .comparison-table .comparison-note td { padding: 0 0 4px; text-align: left; font-weight: 400; }
 
   /* ---------- Lab logos ---------- */
   .lab-logo { flex-shrink: 0; vertical-align: middle; color: var(--fg); }
@@ -249,13 +251,81 @@
   }
   .slider-readout { color: var(--fg-3); font-size: 11.5px; font-variant-numeric: tabular-nums; }
 
+  /* Model search */
+  .search {
+    display: flex; align-items: center; gap: 8px; height: 32px;
+    color: var(--fg-3); border-bottom: 1px solid var(--line-2);
+  }
+  .search:focus-within { border-color: var(--accent); }
+  .search > svg { width: 14px; height: 14px; }
+  .search input {
+    flex: 1; min-width: 0; padding: 0; border: 0; outline: none; background: none;
+    color: var(--fg); font-size: 12.5px;
+  }
+  .search input:focus-visible { outline: none; }
+  .search input::placeholder { color: var(--fg-3); opacity: 1; }
+  .search kbd { font: inherit; font-size: 11px; }
+  .search button { display: flex; color: inherit; }
+  .search button svg { width: 14px; height: 14px; }
+  .search [hidden] { display: none; }
+
+  /* Model lists */
+  #model-groups { display: contents; }
+  .model-row {
+    display: flex; align-items: center; gap: 9px; width: calc(100% + 12px); min-height: 26px;
+    margin: 0 -6px; padding: 0 6px; border-radius: 5px;
+    color: var(--fg-3); font-size: 12.5px; text-align: left;
+    -webkit-touch-callout: none;
+  }
+  @media (hover: hover) { .model-row:hover { background: var(--hover); } }
+  .model-row[aria-pressed="true"] { color: var(--fg); }
+  .model-row .lab-logo { opacity: .4; }
+  .model-row[aria-pressed="true"] .lab-logo, .model-row:hover .lab-logo { opacity: 1; }
+  .model-row.off-frontier { opacity: .35; }
+  .model-row.on-frontier { font-weight: 550; }
+  .model-row.off-frontier:hover, .model-row.off-frontier:focus-visible { opacity: 1; }
+  .model-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .model-dot {
+    flex-shrink: 0; width: 7px; height: 7px; border-radius: 50%;
+    box-shadow: inset 0 0 0 1px; opacity: .5;
+  }
+  .model-row[aria-pressed="true"] .model-dot { opacity: 1; background: currentColor; }
+  .side-note { margin: 0; color: var(--fg-2); font-size: 12px; }
+  .side-note[hidden], .browse-options[hidden], .browse-options div[hidden] { display: none; }
+  .browse-options {
+    display: flex; flex-direction: column; gap: 10px; padding-top: 14px;
+    border-top: 1px solid var(--line);
+  }
+  .browse-options > button { color: var(--fg-2); font-size: 12px; text-align: left; }
+  .browse-options div { display: flex; gap: 14px; }
+  .browse-options div button { color: var(--fg-3); font-size: 11.5px; }
+  .browse-options div button[aria-pressed="true"] { color: var(--accent); }
+
+  /* ---------- Context menu ---------- */
+  .context-menu {
+    position: fixed; z-index: 100; width: 250px; max-width: calc(100vw - 16px);
+    max-height: calc(100dvh - 16px); overflow-y: auto; padding: 6px; font-size: 12px;
+    background: var(--surface); border: 1px solid var(--line-2); border-radius: 8px;
+  }
+  .context-menu[hidden] { display: none; }
+  .context-menu-title { padding: 8px; color: var(--accent); overflow-wrap: anywhere; }
+  .context-menu button {
+    display: block; width: 100%; padding: 8px; border-radius: 5px;
+    color: var(--fg-2); text-align: left;
+  }
+  .context-menu button:hover, .context-menu button:focus { outline: none; background: var(--hover); color: var(--fg); }
+  .context-menu .menu-divider { margin-top: 5px; border-top: 1px solid var(--line-2); border-radius: 0; }
+  .chart-svg { -webkit-touch-callout: none; }
+
   /* ---------- Breakpoints ---------- */
   @media (width >= 1600px) {
     .view-tabs { gap: 26px; }
     .view-tabs button { font-size: 13px; }
+    .model-row { min-height: 29px; font-size: 13px; }
   }
   @media (width >= 761px) and (height <= 820px) {
     .sidebar { gap: 14px; padding-top: 12px; }
+    .model-row { min-height: 24px; }
   }
   @media (width <= 1150px) {
     .app-header { gap: 16px; padding: 0 18px; }
@@ -363,7 +433,15 @@
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.4-5.7L4 8.6M4 3.8v4.8h4.8"/></svg>
         </button>
       </div>
-      <!-- The model search and the Frontier, Notable and Other lists are added in the next stage. -->
+      <div class="search">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20.5 20.5l-4.6-4.6"/></svg>
+        <input id="model-search" type="text" aria-label="Find a model" placeholder="Find models"
+               autocomplete="off" spellcheck="false">
+        <kbd id="search-kbd" aria-hidden="true">/</kbd>
+        <button type="button" id="search-clear" aria-label="Clear search" title="Clear search" hidden>
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+        </button>
+      </div>
       <div class="effort-filter" role="group" aria-labelledby="effort-heading">
         <h3 id="effort-heading">Reasoning</h3>
         <div id="effort-buttons"></div>
@@ -375,8 +453,18 @@
                aria-label="Maximum end-to-end response time" aria-describedby="time-readout">
         <div class="slider-readout" id="time-readout">No limit</div>
       </section>
+      <div id="model-groups"></div>
+      <p class="side-note" id="search-note" hidden></p>
+      <div class="browse-options" id="browse-options">
+        <button type="button" id="show-all" aria-expanded="false">Show all models</button>
+        <div id="browse-toggles" hidden>
+          <button type="button" id="open-weights" aria-pressed="false">Open weights</button>
+        </div>
+      </div>
     </aside>
   </div>
+
+  <div class="context-menu" id="context-menu" role="menu" hidden></div>
 </div>
 
 <!--
@@ -819,6 +907,116 @@ function chartModel(data, s) {
   };
 }
 
+/* ---------- Model browser ---------- */
+const LAB_ORDER = Object.keys(CONFIG.labs);
+const isFrontier = (id) => Object.hasOwn(CONFIG.frontier, id);
+const isNotable = (id) => Object.hasOwn(CONFIG.notable, id);
+const labDisplayName = (lab, labName) => CONFIG.labs[lab]?.name || labName || lab;
+
+/** Sidebar order: known labs first, then lab name, newest release, then name descending. */
+function compareFamilies(a, b) {
+  const rank = (f) => { const i = LAB_ORDER.indexOf(f.lab); return i < 0 ? LAB_ORDER.length : i; };
+  return rank(a) - rank(b) || a.labName.localeCompare(b.labName) ||
+    compareText(b.released || "", a.released || "") ||
+    b.name.localeCompare(a.name, "en", { numeric: true });
+}
+
+/** Families split into the sidebar lists. Deprecated families exist only while shown. */
+function familyLists(data, s) {
+  const all = [...data.families.values()].filter((f) => s.deprecated || !f.deprecated).sort(compareFamilies);
+  const selected = new Set(s.selected);
+  const otherAll = all.filter((f) => !isFrontier(f.id) && !isNotable(f.id));
+  return {
+    all,
+    frontier: all.filter((f) => isFrontier(f.id)),
+    notable: all.filter((f) => isNotable(f.id)),
+    otherAll,
+    // Selected Other families are always listed; the rest only under "Show all models".
+    other: otherAll.filter((f) => selected.has(f.id) || (s.showAll && (s.openWeights || !f.open))),
+  };
+}
+
+/** Sidebar groups: Frontier, Notable and Other, or a single Results group while searching. */
+function sidebarGroups(data, s) {
+  const lists = familyLists(data, s);
+  const q = s.query.trim().toLowerCase();
+  if (q) {
+    const items = lists.all.filter((f) => `${f.name} ${f.labName}`.toLowerCase().includes(q));
+    return items.length ? [{ id: "search", label: "Results", items }] : [];
+  }
+  return [
+    { id: "frontier", label: "Frontier", items: lists.frontier },
+    { id: "notable", label: "Notable", items: lists.notable },
+    { id: "other", label: "Other", items: lists.other },
+  ].filter((g) => g.items.length);
+}
+
+/** Family ids the sidebar lists, in sidebar order. While searching, every Other family counts. */
+function listedFamilies(data, s) {
+  const lists = familyLists(data, s);
+  return [...lists.frontier, ...lists.notable, ...(s.query.trim() ? lists.otherAll : lists.other)].map((f) => f.id);
+}
+
+/** Frontier families of one tier (or every Notable family), as present in the data. */
+function curatedSet(data, s, tier) {
+  const keys = tier === "notable" ? Object.keys(CONFIG.notable)
+    : Object.keys(CONFIG.frontier).filter((id) => CONFIG.frontier[id].tier === tier);
+  return keys.filter((id) => data.families.has(id) && (s.deprecated || !data.families.get(id).deprecated));
+}
+/** Deselect the set if all of it is selected, otherwise append the missing members. */
+function toggleAll(selected, ids) {
+  if (ids.length && ids.every((id) => selected.includes(id))) return selected.filter((id) => !ids.includes(id));
+  return [...selected, ...ids.filter((id) => !selected.includes(id))];
+}
+
+/** Reasoning levels present in the selected families, in effort order. */
+function effortLevels(data, s) {
+  const selected = new Set(s.selected), levels = new Map();
+  data.variants
+    .filter((v) => selected.has(v.family) && (s.deprecated || !data.families.get(v.family).deprecated))
+    .sort((a, b) => a.effortOrder - b.effortOrder)
+    .forEach((v) => { if (!levels.has(v.effort)) levels.set(v.effort, effortText(v)); });
+  return [...levels].map(([effort, label]) => ({ effort, label }));
+}
+
+/**
+ * Context menu items for a model ({family, name, lab, labName}) or for the chart
+ * background (null). Each item carries the state patch it applies.
+ */
+function menuItems(model, s, data) {
+  const listed = listedFamilies(data, s);
+  const sel = s.selected;
+  const items = [];
+  if (model) {
+    const f = model.family, on = sel.includes(f), lit = s.highlights.includes(f);
+    items.push(
+      { label: on ? "Hide this family" : "Show this family",
+        patch: { selected: on ? sel.filter((x) => x !== f) : [...sel, f] } },
+      { label: "Show only this family", patch: { selected: [f] } },
+      { label: "Show all except this family", patch: { selected: listed.filter((x) => x !== f) } },
+      { label: lit ? "Unhighlight this family" : "Highlight this family",
+        patch: { highlights: lit ? s.highlights.filter((x) => x !== f) : [...s.highlights, f] } },
+    );
+    const lab = model.lab, name = labDisplayName(lab, model.labName);
+    const labOf = (id) => data.families.get(id)?.lab;
+    const listedLab = listed.filter((id) => labOf(id) === lab);
+    items.push(
+      { label: `Show all ${name}`, divider: true,
+        patch: { selected: [...sel, ...listedLab.filter((id) => !sel.includes(id))] } },
+      { label: `Hide ${name}`, patch: { selected: sel.filter((id) => labOf(id) !== lab) } },
+      { label: `Show only ${name}`, patch: { selected: listedLab } },
+      { label: `Show all except ${name}`, patch: { selected: listed.filter((id) => labOf(id) !== lab) } },
+    );
+  }
+  items.push(
+    { label: "Show all listed models", divider: true, patch: { selected: listed } },
+    { label: "Reset model selection", patch: { selected: [...CONFIG.defaults.selected] } },
+    { label: "Clear model selection", patch: { selected: [] } },
+  );
+  if (s.highlights.length) items.push({ label: "Clear highlights", patch: { highlights: [] } });
+  return items;
+}
+
 /* ---------- URL codec ---------- */
 const URL_KEYS = {
   metric: "metric", selected: "models", excluded: "hide-reasoning", frontier: "frontier",
@@ -839,9 +1037,10 @@ function decodeUrl(search, known) {
   const out = {};
   const metric = get(URL_KEYS.metric);
   out.metric = CONFIG.metrics.some((m) => m.id === metric) ? metric : d.metric;
+  // An empty list is an empty selection; a list of only unknown names gives the default.
   const models = get(URL_KEYS.selected);
-  const selected = models == null ? [] : parseList(models, known.families);
-  out.selected = selected.length ? selected : [...d.selected];
+  const selected = models ? parseList(models, known.families) : [];
+  out.selected = models === "" || selected.length ? selected : [...d.selected];
   const hide = get(URL_KEYS.excluded);
   out.excluded = hide == null ? [...d.excluded] : parseList(hide, known.efforts);
   for (const key of ["frontier", "linear", "labels", "deprecated"]) {
@@ -902,6 +1101,10 @@ const state = {
   labelHover: null,       // family whose right-side label is hovered
   highlights: [],         // highlighted family ids
   focusFamily: null,      // family hovered in the sidebar
+  query: "",              // model search text, not stored in the URL
+  showAll: false,         // "Show all models" lists the Other group
+  openWeights: false,     // ...including open-weights families
+  menu: null,             // open context menu: { x, y, title, items, originKey, keyboard, openedAt }
   size: { ...CONFIG.layout.initialSize },
   compact: false,
 };
@@ -918,6 +1121,10 @@ const els = {
   empty: $("empty-state"), emptyTitle: $("empty-title"), emptyText: $("empty-text"), emptyAction: $("empty-action"),
   count: $("model-count"), reset: $("reset-selection"), efforts: $("effort-buttons"),
   plans: $("plan-sections"), slider: $("time-slider"), readout: $("time-readout"),
+  search: $("model-search"), searchKbd: $("search-kbd"), searchClear: $("search-clear"),
+  groups: $("model-groups"), searchNote: $("search-note"), browse: $("browse-options"),
+  showAll: $("show-all"), browseToggles: $("browse-toggles"), openWeights: $("open-weights"),
+  menu: $("context-menu"),
 };
 const ICONS = {
   sun: '<circle cx="12" cy="12" r="4.2"/><path d="M12 1.8v2.4M12 19.8v2.4M1.8 12h2.4M19.8 12h2.4M4.8 4.8l1.7 1.7M17.5 17.5l1.7 1.7M4.8 19.2l1.7-1.7M17.5 6.5l1.7-1.7"/>',
@@ -935,14 +1142,29 @@ function labMark(lab, labName, size) {
   return `<span class="lab-logo lab-monogram" aria-hidden="true" style="width:${size}px;height:${size}px;font-size:${size * 0.55}px">${esc((labName || lab || "?").charAt(0))}</span>`;
 }
 
+// True while markup is being replaced: focus events then are not the user's doing.
+let rendering = false;
+const byKey = (root, key) => root.querySelector(`[data-key="${CSS.escape(key)}"]`);
+
+/** Focus an element without the focus handlers treating it as hover or row focus. */
+function quietFocus(el) {
+  rendering = true;
+  try { el.focus({ preventScroll: true }); } finally { rendering = false; }
+}
+
 /** Replace an element's markup, keeping keyboard focus on the element with the same data-key. */
 function setHTML(el, html) {
   if (el._html === html) return;
   const active = document.activeElement;
   const key = el.contains(active) ? active.getAttribute("data-key") : null;
-  el._html = html;
-  el.innerHTML = html;
-  if (key != null) el.querySelector(`[data-key="${CSS.escape(key)}"]`)?.focus({ preventScroll: true });
+  rendering = true;
+  try {
+    el._html = html;
+    el.innerHTML = html;
+    if (key != null) byKey(el, key)?.focus({ preventScroll: true });
+  } finally {
+    rendering = false;
+  }
 }
 
 function themeColors() {
@@ -984,13 +1206,8 @@ function renderSidebar() {
   const data = state.data;
   els.count.textContent = state.selected.length;
 
-  // Reasoning levels present in the selected families, in effort order.
-  const selected = new Set(state.selected);
-  const levels = new Map();
-  data.variants.filter((v) => selected.has(v.family)).sort((a, b) => a.effortOrder - b.effortOrder)
-    .forEach((v) => { if (!levels.has(v.effort)) levels.set(v.effort, v); });
-  setHTML(els.efforts, [...levels.values()].map((v) =>
-    `<button type="button" data-key="${v.effort}" aria-pressed="${!state.excluded.includes(v.effort)}">${esc(effortText(v))}</button>`).join(""));
+  setHTML(els.efforts, effortLevels(data, state).map(({ effort, label }) =>
+    `<button type="button" data-key="${effort}" aria-pressed="${!state.excluded.includes(effort)}">${esc(label)}</button>`).join(""));
 
   setHTML(els.plans, CONFIG.plans.map((group) => `
     <section class="option-section" aria-labelledby="plan-${group.key}-heading">
@@ -1002,6 +1219,52 @@ function renderSidebar() {
     </section>`).join(""));
 
   renderTimeFilter();
+  renderModelBrowser();
+}
+
+function renderModelBrowser() {
+  const data = state.data;
+  const searching = state.query.trim() !== "";
+  if (els.search.value !== state.query) els.search.value = state.query;
+  els.searchKbd.hidden = state.query !== "";
+  els.searchClear.hidden = state.query === "";
+
+  // While the Pareto line is drawn, selected rows show whether their family reaches it.
+  const built = state.frontier ? buildRows(data, state) : null;
+  const paretoFams = built && built.rows.length >= CONFIG.minChartPoints
+    ? new Set(paretoSet(built.visible).map((r) => r.family)) : null;
+  const selected = new Set(state.selected);
+  const row = (f) => {
+    const on = selected.has(f.id);
+    const cls = paretoFams && on ? (paretoFams.has(f.id) ? " on-frontier" : " off-frontier") : "";
+    return `<button type="button" class="model-row${cls}" data-key="f:${esc(f.id)}" data-family="${esc(f.id)}" aria-pressed="${on}" title="${esc(f.name)} · ${esc(f.labName)}">` +
+      `${labMark(f.lab, f.labName, 14)}<span class="model-name">${esc(shortName(f.name))}</span>` +
+      `<i class="model-dot" style="color:${familyColor(f.id, f.lab, state.theme)}"></i></button>`;
+  };
+  const toggle = (key, label, ids) => {
+    const pressed = ids.length > 0 && ids.every((id) => selected.has(id));
+    return `<button type="button" data-key="t:${key}" data-set="${key}" aria-pressed="${pressed}">${label}</button>`;
+  };
+  setHTML(els.groups, sidebarGroups(data, state).map((g) => {
+    let tools = "";
+    if (g.id === "frontier") {
+      tools = `<div role="group" aria-label="Frontier tiers">${CONFIG.frontierTiers.map((t) =>
+        toggle(t, t, curatedSet(data, state, t))).join("")}</div>`;
+    } else if (g.id === "notable") {
+      tools = toggle("notable", "All", curatedSet(data, state, "notable"));
+    }
+    return `<section class="model-section" aria-label="${g.label}">` +
+      `<div class="section-head"><h3>${g.label}</h3>${tools}</div>${g.items.map(row).join("")}</section>`;
+  }).join(""));
+
+  const empty = searching && !els.groups.children.length;
+  els.searchNote.hidden = !empty;
+  els.searchNote.textContent = empty ? `No models match “${state.query.trim()}”.` : "";
+  els.browse.hidden = searching;
+  els.showAll.setAttribute("aria-expanded", state.showAll);
+  els.showAll.textContent = state.showAll ? "Hide other models" : "Show all models";
+  els.browseToggles.hidden = !state.showAll;
+  els.openWeights.setAttribute("aria-pressed", state.openWeights);
 }
 
 function renderTimeFilter() {
@@ -1021,21 +1284,17 @@ function renderTimeFilter() {
 }
 
 /* ---------- Chart ---------- */
-let chartRendering = false;
+let lastChart = null;  // the chart model last drawn, for lookups from events
 
 function renderChart() {
   if (!state.data) return;
   const m = chartModel(state.data, state);
   const showEmpty = m.rows.length < CONFIG.minChartPoints;
+  lastChart = showEmpty ? null : m;
   renderEmpty(m, showEmpty);
   els.svg.style.visibility = showEmpty ? "hidden" : "";
   els.svg.setAttribute("aria-label", `${m.metric.axis} versus cost per task`);
-  chartRendering = true;
-  try {
-    setHTML(els.svg, showEmpty ? "" : drawChart(m, themeColors()));
-  } finally {
-    chartRendering = false;
-  }
+  setHTML(els.svg, showEmpty ? "" : drawChart(m, themeColors()));
   els.svg.setAttribute("viewBox", `0 0 ${m.geo.W} ${m.geo.H}`);
   renderTooltip(showEmpty ? null : m);
 }
@@ -1174,12 +1433,13 @@ function showModelsWithData() {
 }
 
 /* ---------- Tooltip ---------- */
-function tooltipRows(r) {
+/** Tooltip rows. `withApi` adds the API cost even when no plan applies (for comparisons). */
+function tooltipRows(r, withApi = false) {
   const v = r.v, metric = metricById(state.metric);
   const plan = planFor(v, state.plans);
   const rows = [{ key: "score", label: metric.axis, value: r.y, text: fmtScore(r.y), note: livebenchNote(v, metric) }];
   rows.push({ key: "cost", label: plan ? `Cost per task (${plan.fullName})` : "Cost per task", value: r.x, text: fmtCost(r.x) });
-  if (plan) rows.push({ key: "api", label: "API cost per task", value: v.cost, text: fmtCost(v.cost) });
+  if (plan || withApi) rows.push({ key: "api", label: "API cost per task", value: v.cost, text: fmtCost(v.cost) });
   rows.push({ key: "time", label: "Response time", value: v.time, text: fmtSeconds(v.time) });
   rows.push({ key: "speed", label: "Output speed", value: v.speed, text: fmtSpeed(v.speed) });
   return rows;
@@ -1202,15 +1462,19 @@ function renderTooltip(m) {
     `<p>${esc(r.v.effortLabel)}${r === m.pinned ? " · Pinned" : ""}</p>`;
   if (m.comparing) {
     const a = m.pinned, h = m.hovered;
-    const ra = tooltipRows(a), rh = tooltipRows(h);
-    const keys = [...new Set([...ra, ...rh].map((x) => x.key))];
+    const withApi = !!(planFor(a.v, state.plans) || planFor(h.v, state.plans));
+    const ra = tooltipRows(a, withApi), rh = tooltipRows(h, withApi);
+    const keys = ra.map((x) => x.key);
     const find = (list, k) => list.find((x) => x.key === k);
     html += `<div class="comparison-reference">${labMark(a.v.lab, a.v.labName, 14)}vs ${esc(a.v.name)} · ${esc(a.v.effortLabel)}</div>` +
       `<table class="comparison-table"><thead><tr><th><span class="sr-only">Metric</span></th><th>Selected</th><th>Hovered</th><th>Multiplier</th></tr></thead><tbody>` +
       keys.map((k) => {
         const x = find(ra, k), y = find(rh, k);
         const label = k === "cost" ? "Cost per task" : (x || y).label;
-        return `<tr><th>${esc(label)}</th><td>${x ? x.text : "—"}</td><td>${y ? y.text : "—"}</td><td>${fmtMult(y?.value, x?.value)}</td></tr>`;
+        // LiveBench provenance goes on its own full-width line under the score.
+        const notes = [x?.note && `Selected: ${x.note}`, y?.note && `Hovered: ${y.note}`].filter(Boolean);
+        return `<tr><th>${esc(label)}</th><td>${x ? x.text : "—"}</td><td>${y ? y.text : "—"}</td><td>${fmtMult(y?.value, x?.value)}</td></tr>` +
+          (notes.length ? `<tr class="comparison-note"><td colspan="4">${notes.map((n) => `<small>${esc(n)}</small>`).join("")}</td></tr>` : "");
       }).join("") + "</tbody></table>";
   } else {
     html += tooltipRows(r).map((x) =>
@@ -1243,6 +1507,7 @@ function applyTheme(theme) {
   document.documentElement.dataset.theme = theme;
   document.querySelector('meta[name="theme-color"]').content = theme === "light" ? "#ffffff" : "#000000";
   renderHeader();
+  if (state.data) renderSidebar();
   renderChart();
 }
 els.theme.addEventListener("click", () => {
@@ -1269,10 +1534,14 @@ els.zoom.addEventListener("click", () => { state.zoomY = !state.zoomY; update();
 els.deprecated.addEventListener("click", () => { state.deprecated = !state.deprecated; update(); });
 els.emptyAction.addEventListener("click", showModelsWithData);
 
+// Reset keeps the benchmark, plans and response time limit.
 els.reset.addEventListener("click", () => {
   const d = CONFIG.defaults;
+  closeMenu(false);
   Object.assign(state, { selected: [...d.selected], excluded: [...d.excluded], frontier: d.frontier,
-    linear: d.linear, labels: d.labels, zoomY: false, highlights: [], hovered: null, pinned: null, labelHover: null });
+    linear: d.linear, labels: d.labels, deprecated: d.deprecated, zoomY: false,
+    query: "", showAll: false, openWeights: false,
+    highlights: [], hovered: null, pinned: null, labelHover: null, focusFamily: null });
   update();
 });
 els.efforts.addEventListener("click", (e) => {
@@ -1289,9 +1558,54 @@ els.plans.addEventListener("click", (e) => {
   update();
 });
 
+/* ---------- Model browser events ---------- */
+els.search.addEventListener("input", () => {
+  state.query = els.search.value;
+  renderModelBrowser();
+});
+els.searchClear.addEventListener("click", () => {
+  state.query = "";
+  renderModelBrowser();
+  els.search.focus();
+});
+els.groups.addEventListener("click", (e) => {
+  const row = e.target.closest(".model-row");
+  const set = e.target.closest("[data-set]")?.dataset.set;
+  if (row) {
+    const f = row.dataset.family;
+    state.selected = state.selected.includes(f) ? state.selected.filter((x) => x !== f) : [...state.selected, f];
+  } else if (set) {
+    state.selected = toggleAll(state.selected, curatedSet(state.data, state, set));
+  } else {
+    return;
+  }
+  update();
+});
+els.showAll.addEventListener("click", () => { state.showAll = !state.showAll; renderModelBrowser(); });
+els.openWeights.addEventListener("click", () => { state.openWeights = !state.openWeights; renderModelBrowser(); });
+
+// A sidebar row under the mouse, or with keyboard focus, emphasises its family on the chart.
+function setFocusFamily(family) {
+  if (state.focusFamily === family) return;
+  state.focusFamily = family;
+  renderChart();
+}
+const rowFamily = (target) => target.closest?.(".model-row")?.dataset.family ?? null;
+els.groups.addEventListener("pointerover", (e) => {
+  if (e.pointerType === "mouse" && !state.menu) setFocusFamily(rowFamily(e.target));
+});
+els.groups.addEventListener("pointerleave", () => setFocusFamily(null));
+els.groups.addEventListener("focusin", (e) => {
+  if (!rendering && e.target.matches(".model-row:focus-visible")) setFocusFamily(rowFamily(e.target));
+});
+els.groups.addEventListener("focusout", (e) => {
+  if (!rendering && !rowFamily(e.relatedTarget || document.body)) setFocusFamily(null);
+});
+
 els.slider.addEventListener("input", () => {
   state.maxTime = sliderToSeconds(+els.slider.value, CONFIG.sliderSteps, state.data.timeRange);
   renderTimeFilter();
+  renderModelBrowser();
   renderChart();
   syncUrl();
 });
@@ -1327,11 +1641,12 @@ function toggleHighlight(family) {
     ? state.highlights.filter((f) => f !== family) : [...state.highlights, family];
   renderChart();
 }
-els.svg.addEventListener("pointerover", (e) => setHover(pointOf(e.target), labelOf(e.target)));
+// While the context menu is open, the pointer does not hover the chart or the rows.
+els.svg.addEventListener("pointerover", (e) => { if (!state.menu) setHover(pointOf(e.target), labelOf(e.target)); });
 els.svg.addEventListener("pointerleave", () => setHover(null, null));
-els.svg.addEventListener("focusin", (e) => { if (!chartRendering) setHover(pointOf(e.target), labelOf(e.target)); });
+els.svg.addEventListener("focusin", (e) => { if (!rendering) setHover(pointOf(e.target), labelOf(e.target)); });
 els.svg.addEventListener("focusout", (e) => {
-  if (!chartRendering && !els.svg.contains(e.relatedTarget)) setHover(null, null);
+  if (!rendering && !els.svg.contains(e.relatedTarget)) setHover(null, null);
 });
 els.svg.addEventListener("click", (e) => {
   const id = pointOf(e.target), family = labelOf(e.target);
@@ -1340,25 +1655,180 @@ els.svg.addEventListener("click", (e) => {
 });
 els.svg.addEventListener("keydown", (e) => {
   const id = pointOf(e.target), family = labelOf(e.target);
-  if (e.key === "Enter" || e.key === " ") {
-    if (!id && !family) return;
-    e.preventDefault();
-    if (id) togglePin(id); else toggleHighlight(family);
-  } else if (e.key === "Escape" && id && state.pinned) {
-    state.pinned = null;
-    renderChart();
-  }
+  if ((e.key !== "Enter" && e.key !== " ") || (!id && !family)) return;
+  e.preventDefault();
+  if (id) togglePin(id); else toggleHighlight(family);
 });
 els.tooltip.addEventListener("click", (e) => {
   if (!e.target.closest('button[data-key="close"]')) return;
   state.pinned = state.hovered = null;
   renderChart();
 });
-window.addEventListener("keydown", (e) => {
-  if (e.key !== "Escape") return;
-  if (!state.pinned && !state.hovered && !state.labelHover && !state.highlights.length) return;
-  Object.assign(state, { pinned: null, hovered: null, labelHover: null, highlights: [] });
+
+/* ---------- Context menu ---------- */
+// The model a context menu opens for: a sidebar row's family, a point's variant, or a
+// label's anchor variant. Null means the chart background; undefined means not ours.
+function menuTarget(target) {
+  const row = target.closest?.(".model-row");
+  if (row) {
+    const f = state.data.families.get(row.dataset.family);
+    return { origin: row, model: { family: f.id, name: f.name, lab: f.lab, labName: f.labName } };
+  }
+  const point = target.closest?.("[data-id]");
+  if (point) return { origin: point, model: state.data.byId.get(point.dataset.id) };
+  const label = target.closest?.("[data-label]");
+  if (label) {
+    const entry = lastChart?.labels.find((l) => l.family === label.dataset.label);
+    return { origin: label, model: entry ? entry.anchor.v : null };
+  }
+  return els.svg.contains(target) ? { origin: null, model: null } : undefined;
+}
+
+// The last input: "keyboard", or the pointerType of the last pointerdown.
+let lastInput = "mouse";
+window.addEventListener("keydown", () => { lastInput = "keyboard"; }, true);
+window.addEventListener("pointerdown", (e) => { lastInput = e.pointerType || "mouse"; }, true);
+
+function openMenu(target, clientX, clientY) {
+  const t = menuTarget(target);
+  if (t === undefined) return false;
+  const keyboard = lastInput === "keyboard";
+  let x = clientX, y = clientY;
+  if ((!x && !y) || keyboard) {
+    const r = (t.origin || target).getBoundingClientRect();
+    x = r.left;
+    y = r.bottom;
+  }
+  state.menu = { x, y, title: t.model ? t.model.name : "Chart", items: menuItems(t.model, state, state.data),
+    originKey: t.origin?.getAttribute("data-key") ?? null, keyboard, openedAt: performance.now() };
+  // The menu takes over from any hover emphasis.
+  Object.assign(state, { hovered: null, labelHover: null, focusFamily: null });
   renderChart();
+  renderMenu();
+  return true;
+}
+
+function renderMenu() {
+  const m = state.menu, el = els.menu;
+  if (!m) { el.hidden = true; el.textContent = ""; return; }
+  el.innerHTML = `<div class="context-menu-title">${esc(m.title)}</div>` + m.items.map((item, i) =>
+    `<button type="button" role="menuitem" data-index="${i}"${item.divider ? ' class="menu-divider"' : ""}>${esc(item.label)}</button>`).join("");
+  el.setAttribute("aria-label", m.title);
+  el.hidden = false;
+  const r = el.getBoundingClientRect();
+  el.style.left = Math.max(8, Math.min(m.x, innerWidth - r.width - 8)) + "px";
+  el.style.top = Math.max(8, Math.min(m.y, innerHeight - r.height - 8)) + "px";
+  el.querySelector("button").focus({ preventScroll: true });
+}
+
+/** Close the menu; by default focus goes back to the element that opened it. */
+function closeMenu(restoreFocus = true) {
+  const m = state.menu;
+  if (!m) return;
+  state.menu = null;
+  renderMenu();
+  const origin = restoreFocus && m.originKey != null ? byKey(document, m.originKey) : null;
+  // After a mouse right-click, focusing a point must not leave it looking hovered.
+  if (origin) (m.keyboard ? origin.focus({ preventScroll: true }) : quietFocus(origin));
+}
+
+function onContextMenu(e) {
+  if (lastInput === "touch" || lastInput === "pen") {  // the long press below handles these
+    if (menuTarget(e.target) !== undefined) e.preventDefault();
+    return;
+  }
+  if (openMenu(e.target, e.clientX, e.clientY)) { e.preventDefault(); e.stopPropagation(); }
+}
+els.svg.addEventListener("contextmenu", onContextMenu);
+els.groups.addEventListener("contextmenu", onContextMenu);
+
+els.menu.addEventListener("contextmenu", (e) => e.preventDefault());
+els.menu.addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-index]");
+  if (!b) return;
+  const item = state.menu.items[+b.dataset.index];
+  Object.assign(state, item.patch);
+  update();
+  closeMenu();
+});
+els.menu.addEventListener("keydown", (e) => {
+  if (e.key === "Escape" || e.key === "Tab") {
+    e.preventDefault();
+    e.stopPropagation();
+    closeMenu();
+    return;
+  }
+  const buttons = [...els.menu.querySelectorAll("button")];
+  const i = buttons.indexOf(document.activeElement), n = buttons.length;
+  const next = { ArrowDown: (i + 1) % n, ArrowUp: (i - 1 + n) % n, Home: 0, End: n - 1 }[e.key];
+  if (next === undefined) return;
+  e.preventDefault();
+  buttons[next].focus();
+});
+els.menu.addEventListener("focusout", (e) => {
+  if (state.menu && !els.menu.contains(e.relatedTarget) && e.relatedTarget) closeMenu(false);
+});
+window.addEventListener("pointerdown", (e) => { if (state.menu && !els.menu.contains(e.target)) closeMenu(false); });
+window.addEventListener("resize", () => closeMenu(false));
+// Scrolling elsewhere closes the menu. A scroll event dispatched in the first frames after
+// opening comes from scrolling that happened before the right-click, so it is ignored.
+window.addEventListener("scroll", (e) => {
+  if (!state.menu || performance.now() - state.menu.openedAt < 100) return;
+  if (!(e.target instanceof Node && els.menu.contains(e.target))) closeMenu(false);
+}, true);
+
+// Touch: a long press opens the menu; the click that follows it is swallowed.
+const touchPress = { timer: 0, x: 0, y: 0, swallowClick: false };
+const LONG_PRESS = { ms: 500, slop: 10 };
+function cancelLongPress() { clearTimeout(touchPress.timer); touchPress.timer = 0; }
+function startLongPress(e) {
+  touchPress.swallowClick = false;
+  cancelLongPress();
+  if (e.pointerType === "mouse" || menuTarget(e.target) === undefined) return;
+  const { target, clientX, clientY } = e;
+  Object.assign(touchPress, { x: clientX, y: clientY });
+  touchPress.timer = setTimeout(() => {
+    touchPress.timer = 0;
+    if (openMenu(target, clientX, clientY)) touchPress.swallowClick = true;
+  }, LONG_PRESS.ms);
+}
+els.svg.addEventListener("pointerdown", startLongPress);
+els.groups.addEventListener("pointerdown", startLongPress);
+window.addEventListener("pointermove", (e) => {
+  if (touchPress.timer && Math.hypot(e.clientX - touchPress.x, e.clientY - touchPress.y) > LONG_PRESS.slop) cancelLongPress();
+});
+window.addEventListener("pointerup", cancelLongPress);
+window.addEventListener("pointercancel", cancelLongPress);
+window.addEventListener("click", (e) => {
+  if (!touchPress.swallowClick) return;
+  touchPress.swallowClick = false;
+  e.preventDefault();
+  e.stopPropagation();
+}, true);
+
+/* ---------- Keyboard ---------- */
+/** Escape undoes the innermost thing: the menu, then search text, then chart emphasis. */
+function handleEscape() {
+  if (state.menu) { closeMenu(); return true; }
+  if (state.query) {
+    state.query = "";
+    renderModelBrowser();
+    return true;
+  }
+  if (state.pinned || state.hovered || state.labelHover || state.highlights.length) {
+    Object.assign(state, { pinned: null, hovered: null, labelHover: null, highlights: [] });
+    renderChart();
+    return true;
+  }
+  return false;
+}
+window.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    if (handleEscape()) e.preventDefault();
+  } else if (e.key === "/" && !(e.target instanceof HTMLInputElement) && state.data) {
+    e.preventDefault();
+    els.search.focus();
+  }
 });
 
 /* ---------- Size ---------- */
@@ -1399,6 +1869,8 @@ window.__chart = {
   normalise, familyColor, planFor, effectiveCost, sliderToSeconds, secondsToSlider,
   geometry, xDomain, yDomain, linearScale, logScale, niceTicks, logTicks, paretoSet,
   layoutLabels, buildRows, chartModel, decodeUrl, encodeUrl,
+  compareFamilies, familyLists, sidebarGroups, listedFamilies, curatedSet, toggleAll, effortLevels,
+  menuItems, labDisplayName,
 };
 </script>
 </body>

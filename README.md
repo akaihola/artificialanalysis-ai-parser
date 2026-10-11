@@ -215,6 +215,8 @@ To use the page:
 2. Start a web server in this folder: `python3 -m http.server`.
 3. Open `http://localhost:8000/intelligence-vs-cost.html`.
 
+The sidebar lists the model families that have cost data: the curated Frontier and Notable lists, and every other family under "Show all models". Click a family to show or hide it. Type in the search box, or press `/`, to find a family by name or lab. Right-click a family or a point, or long-press it on a touch screen, for more options, such as showing only one lab.
+
 The page has no build step and no script dependencies; it loads the DM Sans font from Google Fonts. It also has tooltips, keyboard navigation, and light and dark themes.
 
 ## License
