@@ -188,7 +188,6 @@
     -webkit-touch-callout: none;
   }
   .chart-legend button span:last-child { overflow: hidden; text-overflow: ellipsis; }
-  .chart-legend button.on-frontier { font-weight: 700; }
   .chart-legend button.dim { opacity: .35; }
 
   /* ---------- Table view ---------- */
@@ -207,7 +206,8 @@
     border-bottom: 1px solid var(--line-2);
   }
   .data-table thead th[aria-sort] { color: var(--fg); }
-  .data-table tbody th { font-weight: 400; }
+  .data-table tbody th { position: sticky; left: 0; background: var(--bg); font-weight: 400; }
+  .data-table thead th:first-child { left: 0; z-index: 2; }
   .data-table tbody tr { border-bottom: 1px solid var(--line); }
   .data-table .num { text-align: right; }
   .data-table td { white-space: nowrap; }
@@ -439,15 +439,17 @@
     .chart-scale { gap: 10px; margin-left: auto; }
     .controls-break { display: block; flex-basis: 100%; height: 0; }
     .chart-canvas { flex: none; aspect-ratio: 1 / 1.2; }
-    .table-view { flex: none; overflow-x: auto; overflow-y: hidden; }
+    .table-view { flex: none; max-height: calc(100dvh - 140px); overflow: auto; }
 
     /* The tooltip becomes a card under the legend that sticks to the bottom of the screen. */
     .chart-tooltip, .chart-tooltip.comparing {
       position: sticky; top: auto; left: auto; right: auto; bottom: calc(10px + env(safe-area-inset-bottom));
       z-index: 7; width: auto; max-width: none; margin-top: 14px;
+      pointer-events: auto;  /* taps on the card must not reach the legend under it */
     }
     .chart-tooltip:not(.comparing) { display: grid; grid-template-columns: 1fr 1fr; column-gap: 20px; padding: 12px 14px; }
-    .chart-tooltip:not(.comparing) > :not(.tooltip-value) { grid-column: 1 / -1; }
+    .chart-tooltip:not(.comparing) > :not(.tooltip-value),
+    .chart-tooltip:not(.comparing) > .tooltip-value.wide { grid-column: 1 / -1; }
     .chart-tooltip p { margin-bottom: 6px; }
     .chart-tooltip a { justify-self: start; margin-top: 6px; }
 
@@ -475,6 +477,9 @@
     .model-row { min-height: 44px; font-size: 15px; }
     .browse-options > button { min-height: 32px; font-size: 14px; }
     .slider-readout { font-size: 13px; }
+    .time-filter input[type="range"] { height: 32px; }
+    .time-filter input[type="range"]::-webkit-slider-thumb { width: 20px; height: 20px; margin-top: -9.5px; }
+    .time-filter input[type="range"]::-moz-range-thumb { width: 20px; height: 20px; }
     .sheet-options {
       display: flex; flex-direction: column; align-items: flex-start; gap: 14px;
       padding-top: 16px; border-top: 1px solid var(--line);
@@ -1019,9 +1024,9 @@ function niceTicks(lo, hi, n = 5) {
   for (let i = Math.ceil(clean(lo / step)); clean(i * step) <= hi; i++) ticks.push(clean(i * step));
   return ticks;
 }
-function logTicks(min, max, compact = false) {
+function logTicks(min, max, compact = false, mantissas = null) {
   const narrow = Math.log10(max / min) < 1.5;
-  const mantissas = narrow ? (compact ? [1, 2, 5] : [1, 1.5, 2, 3, 5, 7]) : (compact ? [1, 3] : [1, 2, 5]);
+  mantissas ||= narrow ? (compact ? [1, 2, 5] : [1, 1.5, 2, 3, 5, 7]) : (compact ? [1, 3] : [1, 2, 5]);
   const ticks = [];
   for (let e = -6; e <= 4; e++) {
     for (const m of mantissas) {
@@ -1030,6 +1035,22 @@ function logTicks(min, max, compact = false) {
     }
   }
   return ticks;
+}
+
+/** Approximate width of an axis label: digits and "$" are about 0.6em wide. */
+const labelWidth = (text, size) => text.length * size * 0.6;
+
+/**
+ * Log ticks whose labels stay 8px apart on the scale `xs`. A wide cost range (plans can
+ * span four decades) falls back to fewer mantissas, then to every second, third or fifth decade.
+ */
+function fitLogTicks(min, max, compact, xs, size) {
+  const fits = (ticks) => ticks.every((t, i) => !i || xs(t) - xs(ticks[i - 1]) >=
+    (labelWidth(fmtCost(t, true), size) + labelWidth(fmtCost(ticks[i - 1], true), size)) / 2 + 8);
+  const decades = logTicks(min, max, compact, [1]);
+  const candidates = [logTicks(min, max, compact), logTicks(min, max, compact, [1, 3]), decades,
+    ...[2, 3, 5].map((n) => decades.filter((t) => Math.round(Math.log10(t)) % n === 0))];
+  return candidates.find((t) => t.length > 1 && fits(t)) || candidates[0];
 }
 
 /** Non-dominated rows: sorted by cost, kept when the score beats every cheaper row. */
@@ -1129,7 +1150,7 @@ function chartModel(data, s) {
 
   return {
     metric, base, rows, visible, ghosts, geo, xd, yd, xs, ys, zoomed,
-    xTicks: s.linear ? niceTicks(0, xd[1]) : logTicks(xd[0], xd[1], geo.compact),
+    xTicks: s.linear ? niceTicks(0, xd[1]) : fitLogTicks(xd[0], xd[1], geo.compact, xs, 12 * geo.v),
     yTicks: niceTicks(yd[0], yd[1]),
     pareto, paretoIds, paretoFams, families, labels, legend,
     pinned, hovered, active, comparing, highlights, focus, anyEmph, emph,
@@ -1706,13 +1727,11 @@ function xTitle() {
 function renderLegend(m) {
   const entries = m ? m.legend : [];
   els.legend.hidden = !entries.length;
-  const pareto = m && m.pareto.length > 0;
   setHTML(els.legend, entries.map(({ family, anchor }) => {
     const f = state.data.families.get(family);
-    // Same emphasis as the right-side labels on the desktop chart.
-    const dim = pareto ? !m.paretoFams.has(family) : m.anyEmph && !m.emph(family);
-    const cls = (dim ? " dim" : "") + (pareto && m.paretoFams.has(family) ? " on-frontier" : "");
-    return `<button type="button" class="legend-item${cls}" data-key="g:${esc(family)}" data-family="${esc(family)}" aria-pressed="${m.highlights.has(family)}" style="color:${familyColor(family, anchor.v.lab, state.theme)}">` +
+    // A highlighted, pinned or focused family dims the others, with or without the Pareto line.
+    const dim = m.anyEmph && !m.emph(family);
+    return `<button type="button" class="legend-item${dim ? " dim" : ""}" data-key="g:${esc(family)}" data-family="${esc(family)}" aria-pressed="${m.highlights.has(family)}" style="color:${familyColor(family, anchor.v.lab, state.theme)}">` +
       `${labMark(f.lab, f.labName, 13)}<span>${esc(shortName(f.name))}</span></button>`;
   }).join(""));
 }
@@ -1846,7 +1865,8 @@ function tooltipRows(r, withApi = false) {
   const v = r.v, metric = metricById(state.metric);
   const plan = planFor(v, state.plans);
   const rows = [{ key: "score", label: metric.axis, value: r.y, text: fmtScore(r.y), note: livebenchNote(v, metric) }];
-  rows.push({ key: "cost", label: plan ? `Cost per task (${plan.fullName})` : "Cost per task", value: r.x, text: fmtCost(r.x) });
+  rows.push({ key: "cost", label: plan ? `Cost per task (${plan.fullName})` : "Cost per task", value: r.x, text: fmtCost(r.x),
+    wide: !!plan });
   if (plan || withApi) rows.push({ key: "api", label: "API cost per task", value: v.cost, text: fmtCost(v.cost) });
   rows.push({ key: "time", label: "Response time", value: v.time, text: fmtSeconds(v.time) });
   rows.push({ key: "speed", label: "Output speed", value: v.speed, text: fmtSpeed(v.speed) });
@@ -1886,7 +1906,7 @@ function renderTooltip(m) {
       }).join("") + "</tbody></table>";
   } else {
     html += tooltipRows(r).map((x) =>
-      `<div class="tooltip-value"><span>${esc(x.label)}</span><b>${x.text}${x.note ? `<small>${esc(x.note)}</small>` : ""}</b></div>`).join("");
+      `<div class="tooltip-value${x.note || x.wide ? " wide" : ""}"><span>${esc(x.label)}</span><b>${x.text}${x.note ? `<small>${esc(x.note)}</small>` : ""}</b></div>`).join("");
   }
   html += `<a href="https://artificialanalysis.ai/models/${encodeURIComponent(r.id)}" target="_blank" rel="noreferrer">Artificial Analysis</a>`;
   setHTML(tip, html);
@@ -2117,7 +2137,8 @@ els.sheetSettings.addEventListener("click", onSettingClick);
 function setSheet(open, restoreFocus = false) {
   state.sheetOpen = open;
   renderSheet();
-  if (open && lastInput === "keyboard") els.sheetDone.focus();
+  // The page behind the sheet goes inert, so focus moves into the sheet.
+  if (open) els.sheetDone.focus({ preventScroll: true });
   if (!open && restoreFocus && state.compact) els.sheetToggle.focus();
 }
 function renderSheet() {
@@ -2527,7 +2548,7 @@ window.__chart = {
   CONFIG, state, fmtCost, fmtScore, fmtSeconds, fmtSpeed, fmtMult, shortName, effortText,
   normalise, familyColor, planFor, effectiveCost, sliderToSeconds, secondsToSlider,
   geometry, xDomain, yDomain, linearScale, logScale, niceTicks, logTicks, paretoSet,
-  layoutLabels, buildRows, chartModel, decodeUrl, encodeUrl,
+  fitLogTicks, layoutLabels, buildRows, chartModel, decodeUrl, encodeUrl,
   compareFamilies, familyLists, sidebarGroups, listedFamilies, curatedSet, toggleAll, effortLevels,
   menuItems, labDisplayName, nearestRow, tableRows, pngFileName,
 };

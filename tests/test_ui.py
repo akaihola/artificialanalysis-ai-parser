@@ -1055,6 +1055,9 @@ class PageTests(unittest.TestCase):
         self.assertTrue(page.is_visible("#sidebar"))
         self.assertEqual(page.get_attribute("#sheet-toggle", "aria-expanded"), "true")
         self.assertEqual(page.get_attribute("#sidebar", "role"), "dialog")
+        # Focus moves into the modal sheet; the slider is a touch-sized target.
+        self.assertEqual(page.evaluate("document.activeElement.id"), "sheet-done")
+        self.assertGreaterEqual(page.eval_on_selector("#time-slider", "e => e.offsetHeight"), 32)
         self.assertTrue(page.is_visible('#plan-sections [data-plan="claude-max-20x"]'))
         self.assertTrue(page.is_visible("#time-slider"))
         page.tap('.model-row[data-family="grok-4-7"]')
@@ -1091,10 +1094,54 @@ class PageTests(unittest.TestCase):
         self.assertTrue(page.is_visible("#tooltip"))
         self.assertEqual(page.text_content("#tooltip p"), "low · Pinned")
         self.assertEqual(page.eval_on_selector("#tooltip", "e => getComputedStyle(e).position"), "sticky")
+        # Taps on the card stay on the card.
+        self.assertEqual(page.eval_on_selector("#tooltip", "e => getComputedStyle(e).pointerEvents"), "auto")
         chart = page.locator("#chart").bounding_box()
         page.touchscreen.tap(chart["x"] + chart["width"] - 20, chart["y"] + chart["height"] - 20)
         self.assertIsNone(self.state(page, "pinned"))
         self.assertTrue(page.is_hidden("#tooltip"))
+
+    def test_mobile_legend_follows_emphasis(self):
+        page = self.open(viewport=MOBILE, has_touch=True)
+        dimmed = lambda: {f for f, dim in page.eval_on_selector_all(
+            "#chart-legend button", "els => els.map((e) => [e.dataset.family, e.classList.contains('dim')])") if dim}
+        # The Pareto line is on, but nothing is emphasised, so nothing is dimmed.
+        self.assertEqual(dimmed(), set())
+        page.tap('#chart-legend [data-family="grok-4-7"]')
+        self.assertEqual(dimmed(), DEFAULT_FAMILIES - {"grok-4-7"})
+        page.tap('#chart-legend [data-family="grok-4-7"]')
+        self.assertEqual(dimmed(), set())
+        # A pinned point dims the other families.
+        box = page.locator('#chart [data-id="gpt-6-luna"] circle:last-child').bounding_box()
+        page.touchscreen.tap(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+        self.assertEqual(dimmed(), DEFAULT_FAMILIES - {"gpt-6-luna"})
+
+    def test_mobile_card_and_table(self):
+        page = self.open("?codex_plan=chatgpt-plus", viewport=MOBILE, has_touch=True)
+        box = page.locator('#chart [data-id="gpt-6-luna"] circle:last-child').bounding_box()
+        page.touchscreen.tap(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+        # The plan-qualified cost label spans both card columns.
+        wide = page.eval_on_selector_all("#tooltip .tooltip-value.wide", """els => els.map((e) =>
+            [e.querySelector('span').textContent, getComputedStyle(e).gridColumnEnd])""")
+        self.assertEqual(wide, [["Cost per task (ChatGPT Plus)", "-1"]])
+        # The table scrolls inside itself: its header row and model column stay in view.
+        page.tap("#table-button")
+        self.assertEqual(page.eval_on_selector("#table-view", "e => getComputedStyle(e).overflowY"), "auto")
+        page.eval_on_selector("#table-view", "e => { e.scrollLeft = 300; }")
+        view = page.locator("#table-view").bounding_box()
+        name = page.locator("#data-table tbody th").first.bounding_box()
+        self.assertGreater(page.eval_on_selector("#table-view", "e => e.scrollLeft"), 0)
+        self.assertAlmostEqual(name["x"], view["x"], delta=1)
+
+    def test_compact_ticks_do_not_collide(self):
+        # Plans spread the costs over four decades.
+        page = self.open("?hide-reasoning=&claude_plan=claude-max-20x&codex_plan=chatgpt-pro",
+                         viewport=MOBILE, has_touch=True)
+        boxes = page.eval_on_selector_all('#chart g[transform] > line[y2="5"] + text', """els => els.map((e) => {
+            const r = e.getBoundingClientRect(); return [r.left, r.right]; })""")
+        self.assertGreater(len(boxes), 2)
+        for a, b in zip(boxes, boxes[1:]):
+            self.assertGreaterEqual(b[0] - a[1], 2, boxes)
 
     def test_mobile_header(self):
         page = self.open("?metric=livebench_agentic_coding", viewport=MOBILE, has_touch=True)
@@ -1133,6 +1180,11 @@ class PageTests(unittest.TestCase):
         self.assertEqual(page.evaluate("__chart.logTicks(0.035, 6.48)"), [0.05, 0.1, 0.2, 0.5, 1, 2, 5])
         self.assertEqual(page.evaluate("__chart.logTicks(0.035, 6.48, true)"), [0.1, 0.3, 1, 3])
         self.assertEqual(page.evaluate("__chart.logTicks(1, 10)"), [1, 1.5, 2, 3, 5, 7, 10])
+        # Too little room for [1, 3] per decade: one tick per decade, then every second decade.
+        fit = "(w) => __chart.fitLogTicks(0.0002, 1.3, true, __chart.logScale([0.0002, 1.3], [40, 40 + w]), 12)"
+        self.assertEqual(page.evaluate(f"({fit})(600)"), [0.0003, 0.001, 0.003, 0.01, 0.03, 0.1, 0.3, 1])
+        self.assertEqual(page.evaluate(f"({fit})(304)"), [0.001, 0.01, 0.1, 1])
+        self.assertEqual(page.evaluate(f"({fit})(150)"), [0.01, 1])
         self.assertEqual(page.evaluate("__chart.yDomain([45, 58])"), [20, 60])
         self.assertEqual(page.evaluate("__chart.yDomain([45, 58], true)"), [40, 60])
 
