@@ -214,8 +214,10 @@ class PageTests(unittest.TestCase):
 
     @staticmethod
     def set_slider(page, value):
+        """Move the slider like a short drag: input, then change when released."""
         page.eval_on_selector("#time-slider", """(el, v) => {
-            el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); }""", value)
+            el.value = v; el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true })); }""", value)
 
     @staticmethod
     def tooltip_rows(page):
@@ -1005,16 +1007,26 @@ class PageTests(unittest.TestCase):
         self.assertEqual(page.get_attribute("#pareto-toggle", "aria-pressed"), "true")
         self.assertEqual(page.get_attribute('[data-plan="chatgpt-plus"]', "aria-pressed"), "true")
 
+    @staticmethod
+    def touch_state(page):
+        """A change and its undo: the page then writes its state to the URL."""
+        page.click("#scale-linear")
+        page.click("#scale-log")
+
     def test_unknown_url_values_fall_back_to_defaults(self):
+        # The address bar keeps the link as typed until the user changes something.
         page = self.open("?models=old-model,another-old-one")
         self.assertEqual(set(self.state(page, "selected")), DEFAULT_FAMILIES)
-        self.assertEqual(query(page), {})
+        self.assertEqual(query(page), {"models": "old-model,another-old-one"})
         self.assertEqual(self.points(page), DEFAULT_POINTS)
+        self.touch_state(page)
+        self.assertEqual(query(page), {})
 
         page = self.open("?models=old-model,grok-4-7,grok-4-7")
         self.assertEqual(self.state(page, "selected"), ["grok-4-7"])
-        self.assertEqual(query(page), {"models": "grok-4-7"})
         self.assertEqual(page.text_content("#empty-title"), "Only 1 selected model has Intelligence data")
+        self.touch_state(page)
+        self.assertEqual(query(page), {"models": "grok-4-7"})
 
         page = self.open("?models=")
         self.assertEqual(self.state(page, "selected"), [])
@@ -1029,18 +1041,54 @@ class PageTests(unittest.TestCase):
         self.assertEqual([self.state(page, "query"), self.state(page, "highlights")], ["", []])
         self.assertEqual(query(page), {"metric": "coding_index"})
 
+        # As in slopalytics: a boolean is true only for "true", and a list keeps its known
+        # names, so an unknown reasoning level shows every level.
         page = self.open("?metric=coding_index_v2&claude_plan=max-100x&max_response_time=-5&frontier=maybe"
                          "&linear=1&hide-reasoning=ultra")
         self.assertEqual(self.state(page, "metric"), "intelligence_index")
         self.assertEqual(self.state(page, "plans"), {"claude": "claude-api", "codex": "chatgpt-api"})
-        self.assertEqual(self.state(page, "excluded"), ["none"])
-        self.assertTrue(self.state(page, "frontier"))
+        self.assertEqual(self.state(page, "excluded"), [])
+        self.assertFalse(self.state(page, "frontier"))
         self.assertFalse(self.state(page, "linear"))
+        self.assertIn("claude-haiku-5-5-non-reasoning", self.points(page))
         self.assertEqual(page.text_content("#time-readout"), "No limit")
-        self.assertEqual(query(page), {})
-        # Known values are read in any case; unknown names in a list are dropped.
-        page = self.open("?frontier=FALSE&hide-reasoning=ultra,max")
-        self.assertEqual(query(page), {"frontier": "false", "hide-reasoning": "max"})
+        self.touch_state(page)
+        self.assertEqual(query(page), {"frontier": "false", "hide-reasoning": ""})
+        # Known values are read in any case. A fractional limit snaps to whole seconds.
+        page = self.open("?frontier=FALSE&hide-reasoning=ultra,max&labels=0&max_response_time=12.5")
+        self.assertEqual(self.state(page, "excluded"), ["max"])
+        self.assertFalse(self.state(page, "labels"))
+        self.assertEqual(self.state(page, "maxTime"), 13)
+        self.assertTrue(page.text_content("#time-readout").startswith("≤ 13 s · "))
+        self.touch_state(page)
+        self.assertEqual(query(page), {"frontier": "false", "hide-reasoning": "max", "labels": "false",
+                                       "max_response_time": "13"})
+
+    def test_url_keeps_parameter_order(self):
+        search = "?models=bogus,gpt-6-astra,grok-4-7&frontier=TRUE&ref=1"
+        page = self.open(search)
+        self.assertEqual(urlsplit(page.url).query, search[1:])
+        page.click("#scale-linear")
+        # Existing keys stay in place, defaults drop out, new keys go last.
+        self.assertEqual(urlsplit(page.url).query, "models=gpt-6-astra,grok-4-7&ref=1&linear=true")
+        page = self.open("?labels=false")
+        page.click('.model-row[data-family="claude-sonnet-5-5"]')
+        self.assertTrue(urlsplit(page.url).query.startswith("labels=false&models=gpt-6-astra,"), page.url)
+
+    def test_slider_drag_writes_the_url_once(self):
+        page = self.open()
+        page.evaluate("""() => { window.__writes = 0; const replace = history.replaceState.bind(history);
+            history.replaceState = (...args) => { window.__writes++; return replace(...args); }; }""")
+        # Safari allows 100 replaceState calls in 10 seconds; a drag sends more input events.
+        page.eval_on_selector("#time-slider", """(el) => { for (let v = 199; v >= 100; v--) {
+            el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); } }""")
+        self.assertEqual(page.evaluate("window.__writes"), 0)
+        page.wait_for_function("window.__writes === 1")
+        self.assertEqual(query(page), {"max_response_time": str(self.state(page, "maxTime"))})
+        # Releasing the slider writes at once.
+        self.set_slider(page, 125)
+        self.assertEqual(query(page), {"max_response_time": "100"})
+        self.assertEqual(page.evaluate("window.__writes"), 2)
 
     # ---------- Mobile ----------
     def test_mobile_sheet_and_tap_to_pin(self):

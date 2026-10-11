@@ -1307,15 +1307,12 @@ const URL_KEYS = {
   linear: "linear", labels: "labels", maxTime: "max_response_time", deprecated: "deprecated",
 };
 const sameSet = (a, b) => a.length === b.length && a.every((x) => b.includes(x));
-/** "true" or "false" in any case; anything else is null. */
-function parseBool(v) {
-  const s = String(v).toLowerCase();
-  return s === "true" ? true : s === "false" ? false : null;
-}
 const parseList = (v, known) => [...new Set(v.split(",").filter((x) => known.has(x)))];
 
 /**
- * Read state from a query string. Unknown values fall back to defaults.
+ * Read state from a query string, parsed as slopalytics does: a missing key or an unknown
+ * value gives the default, a boolean is true only for "true" (any case), and lists drop
+ * unknown names. A `models=` list of only unknown names gives the default selection.
  * `known` = { families: Set, efforts: Set }.
  */
 function decodeUrl(search, known) {
@@ -1330,36 +1327,48 @@ function decodeUrl(search, known) {
   const selected = models ? parseList(models, known.families) : [];
   out.selected = models === "" || selected.length ? selected : defaultSelection(known.families);
   const hide = get(URL_KEYS.excluded);
-  const excluded = hide ? parseList(hide, known.efforts) : [];
-  out.excluded = hide === "" || excluded.length ? excluded : [...d.excluded];
-  for (const key of ["frontier", "linear", "labels", "deprecated"]) out[key] = parseBool(get(URL_KEYS[key])) ?? d[key];
+  out.excluded = hide == null ? [...d.excluded] : parseList(hide, known.efforts);
+  for (const key of ["frontier", "linear", "labels", "deprecated"]) {
+    const v = get(URL_KEYS[key]);
+    out[key] = v == null ? d[key] : v.toLowerCase() === "true";
+  }
   out.plans = {};
   for (const group of CONFIG.plans) {
     const id = get(group.urlKey);
     out.plans[group.key] = group.options.some((o) => o.id === id) ? id : d.plans[group.key];
   }
+  // Whole seconds, as the slider sets them, so the read-out states the limit applied.
   const t = Number(get(URL_KEYS.maxTime));
-  out.maxTime = get(URL_KEYS.maxTime) != null && t > 0 ? t : d.maxTime;
+  out.maxTime = get(URL_KEYS.maxTime) != null && t > 0 ? Math.max(1, Math.round(t)) : d.maxTime;
   return out;
 }
 
-/** Write state as a readable query string. Defaults are omitted; other params are kept. */
+/**
+ * Write state as a readable query string. Values equal to their defaults are omitted.
+ * As in slopalytics, keys already in the URL keep their place, new keys are appended, and
+ * other params are kept.
+ */
 function encodeUrl(s, existingSearch = "") {
   const d = CONFIG.defaults;
-  const p = new URLSearchParams(existingSearch);
-  const managed = [...Object.values(URL_KEYS), ...CONFIG.plans.map((g) => g.urlKey)];
-  for (const k of managed) p.delete(k);
-  const pairs = [...p].map(([k, v]) => [k, v]);
-  const add = (k, v) => pairs.push([k, String(v)]);
-  if (s.metric !== d.metric) add(URL_KEYS.metric, s.metric);
-  if (!sameSet(s.selected, defaultSelection(s.data?.families))) add(URL_KEYS.selected, s.selected.join(","));
-  if (!sameSet(s.excluded, d.excluded)) add(URL_KEYS.excluded, s.excluded.join(","));
-  for (const key of ["frontier", "linear", "labels"]) if (s[key] !== d[key]) add(URL_KEYS[key], s[key]);
-  for (const group of CONFIG.plans) {
-    if (s.plans[group.key] !== d.plans[group.key]) add(group.urlKey, s.plans[group.key]);
+  const flag = (key) => [URL_KEYS[key], s[key] !== d[key] ? String(s[key]) : null];
+  const values = new Map([
+    [URL_KEYS.metric, s.metric !== d.metric ? s.metric : null],
+    [URL_KEYS.selected, sameSet(s.selected, defaultSelection(s.data?.families)) ? null : s.selected.join(",")],
+    [URL_KEYS.excluded, sameSet(s.excluded, d.excluded) ? null : s.excluded.join(",")],
+    flag("frontier"), flag("linear"), flag("labels"),
+    ...CONFIG.plans.map((g) => [g.urlKey, s.plans[g.key] !== d.plans[g.key] ? s.plans[g.key] : null]),
+    [URL_KEYS.maxTime, Number.isFinite(s.maxTime) ? String(s.maxTime) : null],
+    flag("deprecated"),
+  ]);
+  const pairs = [], placed = new Set();
+  for (const [k, v] of new URLSearchParams(existingSearch)) {
+    if (!values.has(k)) pairs.push([k, v]);
+    else if (!placed.has(k)) {
+      placed.add(k);
+      if (values.get(k) != null) pairs.push([k, values.get(k)]);
+    }
   }
-  if (Number.isFinite(s.maxTime)) add(URL_KEYS.maxTime, s.maxTime);
-  if (s.deprecated !== d.deprecated) add(URL_KEYS.deprecated, s.deprecated);
+  for (const [k, v] of values) if (!placed.has(k) && v != null) pairs.push([k, v]);
   const enc = (v) => encodeURIComponent(v).replace(/%2C/gi, ",");
   return pairs.length ? "?" + pairs.map(([k, v]) => enc(k) + "=" + enc(v)).join("&") : "";
 }
@@ -1913,16 +1922,31 @@ function renderTooltip(m) {
 }
 
 /* ---------- Render and URL ---------- */
-function syncUrl() {
+let syncTimer = 0;
+function syncUrl(retry = true) {
+  clearTimeout(syncTimer);
+  syncTimer = 0;
   const search = encodeUrl(state, location.search);
-  if (search !== location.search) history.replaceState(null, "", location.pathname + search + location.hash);
+  if (search === location.search) return;
+  try {
+    history.replaceState(null, "", location.pathname + search + location.hash);
+  } catch (err) {
+    // Safari throws after 100 calls in 10 seconds: try once more later.
+    if (retry) syncTimer = setTimeout(() => syncUrl(false), 2000);
+  }
 }
-function update() {
+/** Sync the URL once a stream of changes (a slider drag) has paused. */
+function syncUrlSoon() {
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(syncUrl, 250);
+}
+/** Render everything. The URL is written only for user changes, not on load (`sync` false). */
+function update(sync = true) {
   renderHeader();
   renderToolbar();
   renderSidebar();
   renderChart();
-  syncUrl();
+  if (sync) syncUrl();
 }
 
 /* ---------- Theme ---------- */
@@ -2216,8 +2240,9 @@ els.slider.addEventListener("input", () => {
   renderTimeFilter();
   renderModelBrowser();
   renderChart();
-  syncUrl();
+  syncUrlSoon();
 });
+els.slider.addEventListener("change", () => syncUrl());
 // A horizontal touchpad swipe over the slider or the chart nudges the slider by one step.
 // Mostly vertical scrolling is left alone.
 function nudgeOnHorizontalWheel(e) {
@@ -2532,7 +2557,8 @@ fetch("models.json")
     state.data = normalise(models);
     const known = { families: new Set(state.data.families.keys()), efforts: new Set(Object.keys(CONFIG.efforts)) };
     Object.assign(state, decodeUrl(location.search, known));
-    update();
+    // The address bar keeps the link as typed until the user changes something.
+    update(false);
   })
   .catch((err) => {
     els.empty.hidden = false;
