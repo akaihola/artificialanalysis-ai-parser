@@ -1217,6 +1217,15 @@ function curatedSet(data, s, tier) {
     : Object.keys(CONFIG.frontier).filter((id) => CONFIG.frontier[id].tier === tier);
   return keys.filter((id) => data.families.has(id) && (s.deprecated || !data.families.get(id).deprecated));
 }
+/** The default selection, without families missing from the data (`families` has .has()). */
+function defaultSelection(families) {
+  return CONFIG.defaults.selected.filter((id) => !families || families.has(id));
+}
+/** Selected families the page can show: present in the data and not hidden as deprecated. */
+function shownSelection(data, s) {
+  return s.selected.filter((id) => data.families.has(id) && (s.deprecated || !data.families.get(id).deprecated));
+}
+
 /** Deselect the set if all of it is selected, otherwise append the missing members. */
 function toggleAll(selected, ids) {
   if (ids.length && ids.every((id) => selected.includes(id))) return selected.filter((id) => !ids.includes(id));
@@ -1264,7 +1273,7 @@ function menuItems(model, s, data) {
   }
   items.push(
     { label: "Show all listed models", divider: true, patch: { selected: listed } },
-    { label: "Reset model selection", patch: { selected: [...CONFIG.defaults.selected] } },
+    { label: "Reset model selection", patch: { selected: defaultSelection(data.families) } },
     { label: "Clear model selection", patch: { selected: [] } },
   );
   if (s.highlights.length) items.push({ label: "Clear highlights", patch: { highlights: [] } });
@@ -1298,7 +1307,7 @@ function decodeUrl(search, known) {
   // An empty list is an empty selection; a list of only unknown names gives the default.
   const models = get(URL_KEYS.selected);
   const selected = models ? parseList(models, known.families) : [];
-  out.selected = models === "" || selected.length ? selected : [...d.selected];
+  out.selected = models === "" || selected.length ? selected : defaultSelection(known.families);
   const hide = get(URL_KEYS.excluded);
   const excluded = hide ? parseList(hide, known.efforts) : [];
   out.excluded = hide === "" || excluded.length ? excluded : [...d.excluded];
@@ -1322,7 +1331,7 @@ function encodeUrl(s, existingSearch = "") {
   const pairs = [...p].map(([k, v]) => [k, v]);
   const add = (k, v) => pairs.push([k, String(v)]);
   if (s.metric !== d.metric) add(URL_KEYS.metric, s.metric);
-  if (!sameSet(s.selected, d.selected)) add(URL_KEYS.selected, s.selected.join(","));
+  if (!sameSet(s.selected, defaultSelection(s.data?.families))) add(URL_KEYS.selected, s.selected.join(","));
   if (!sameSet(s.excluded, d.excluded)) add(URL_KEYS.excluded, s.excluded.join(","));
   for (const key of ["frontier", "linear", "labels"]) if (s[key] !== d[key]) add(URL_KEYS[key], s[key]);
   for (const group of CONFIG.plans) {
@@ -1482,7 +1491,7 @@ function renderToolbar() {
 /* ---------- Sidebar ---------- */
 function renderSidebar() {
   const data = state.data;
-  els.count.textContent = state.selected.length;
+  els.count.textContent = shownSelection(data, state).length;
 
   setHTML(els.efforts, effortLevels(data, state).map(({ effort, label }) =>
     `<button type="button" data-key="${effort}" aria-pressed="${!state.excluded.includes(effort)}">${esc(label)}</button>`).join(""));
@@ -1765,7 +1774,7 @@ function renderHeaderButtons() {
   const pngLabel = state.exportFailed ? "PNG download failed. Try again" : "Download PNG";
   els.png.title = pngLabel;
   els.png.setAttribute("aria-label", pngLabel);
-  els.sheetCount.textContent = state.selected.length;
+  els.sheetCount.textContent = state.data ? shownSelection(state.data, state).length : "";
 }
 
 /* ---------- Empty state ---------- */
@@ -1775,26 +1784,59 @@ function familiesWithData(metricId) {
     .map((f) => f.id);
 }
 
+/**
+ * Why the chart is empty, and the one action that fixes it: "Reset filters" when nothing
+ * is selected or every reasoning level is hidden (as slopalytics), "Show deprecated" when
+ * every selected family is hidden as deprecated, or more models when too few selected
+ * variants have data for the benchmark.
+ */
 function renderEmpty(m, show) {
   els.empty.hidden = !show;
   if (!show) return;
   const tab = m.metric.tab;
-  let title;
-  if (!state.selected.length) title = "No models selected";
-  else if (!m.base.length) title = effortLevels(state.data, state).length ? "No reasoning levels enabled" : "No models to show";
-  else if (!m.rows.length) title = `No ${tab} data for the selected models`;
-  else title = `Only ${m.rows.length} selected model${m.rows.length === 1 ? " has" : "s have"} ${tab} data`;
+  let title, text = "", action = null;
+  if (!state.selected.length) {
+    title = "No models selected";
+    action = { id: "reset", label: "Reset filters" };
+  } else if (!shownSelection(state.data, state).length) {
+    title = "The selected models are deprecated";
+    action = { id: "deprecated", label: "Show deprecated" };
+  } else if (!m.base.length) {
+    title = "No reasoning levels enabled";
+    action = { id: "reset", label: "Reset filters" };
+  } else {
+    const families = new Set(m.rows.map((r) => r.family)).size;
+    title = families
+      ? `Only ${families} selected model${families === 1 ? " has" : "s have"} ${tab} data`
+      : `No ${tab} data for the selected models`;
+    text = `The chart needs at least ${CONFIG.minChartPoints} points with data.`;
+    const more = !familiesWithData(m.metric.id).every((f) => state.selected.includes(f)) || state.excluded.length > 0;
+    if (more) action = { id: "data", label: `Show models with ${tab} data` };
+  }
   els.emptyTitle.textContent = title;
-  els.emptyText.textContent = `The chart needs at least ${CONFIG.minChartPoints} models with data.`;
-  els.emptyAction.textContent = `Show models with ${tab} data`;
-  els.emptyAction.hidden = familiesWithData(m.metric.id).every((f) => state.selected.includes(f)) &&
-    state.excluded.length === 0;
+  els.emptyText.textContent = text;
+  els.emptyText.hidden = !text;
+  els.emptyAction.hidden = !action;
+  els.emptyAction.dataset.action = action ? action.id : "";
+  els.emptyAction.textContent = action ? action.label : "";
 }
 
 function showModelsWithData() {
   const add = familiesWithData(state.metric).filter((f) => !state.selected.includes(f));
   state.selected = [...state.selected, ...add];
   if (buildRows(state.data, state).rows.length < CONFIG.minChartPoints) state.excluded = [];
+  update();
+}
+
+/**
+ * "Reset filters": the default selection and reasoning levels, no search, no Other list,
+ * no highlights, pin or hover, no context menu. Chart options, benchmark and plans stay.
+ */
+function resetFilters() {
+  closeMenu(false);
+  Object.assign(state, { selected: defaultSelection(state.data.families), excluded: [...CONFIG.defaults.excluded],
+    query: "", showAll: false, openWeights: false,
+    highlights: [], hovered: null, pinned: null, labelHover: null, focusFamily: null });
   update();
 }
 
@@ -1898,17 +1940,19 @@ els.linear.addEventListener("click", () => { state.linear = true; update(); });
 els.log.addEventListener("click", () => { state.linear = false; update(); });
 els.zoom.addEventListener("click", () => { state.zoomY = !state.zoomY; update(); });
 els.deprecated.addEventListener("click", () => { state.deprecated = !state.deprecated; update(); });
-els.emptyAction.addEventListener("click", showModelsWithData);
+els.emptyAction.addEventListener("click", () => {
+  const action = els.emptyAction.dataset.action;
+  if (action === "reset") resetFilters();
+  else if (action === "deprecated") { state.deprecated = true; update(); }
+  else showModelsWithData();
+});
 
-// Reset keeps the benchmark, plans and response time limit.
+// The sidebar reset also resets the chart options. It keeps the benchmark, plans and
+// response time limit.
 els.reset.addEventListener("click", () => {
   const d = CONFIG.defaults;
-  closeMenu(false);
-  Object.assign(state, { selected: [...d.selected], excluded: [...d.excluded], frontier: d.frontier,
-    linear: d.linear, labels: d.labels, deprecated: d.deprecated, zoomY: false,
-    query: "", showAll: false, openWeights: false,
-    highlights: [], hovered: null, pinned: null, labelHover: null, focusFamily: null });
-  update();
+  Object.assign(state, { frontier: d.frontier, linear: d.linear, labels: d.labels, deprecated: d.deprecated, zoomY: false });
+  resetFilters();
 });
 els.efforts.addEventListener("click", (e) => {
   const effort = e.target.closest("button[data-key]")?.dataset.key;

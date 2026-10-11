@@ -266,7 +266,9 @@ class PageTests(unittest.TestCase):
 
     def test_real_models_json_smoke(self):
         page = self.open(models=None)
-        self.assertEqual(page.text_content("#model-count"), "8")
+        # The count matches the selected rows, whatever the curated defaults found in the data.
+        self.assertEqual(page.text_content("#model-count"), str(len([f for f, on in self.rows(page) if on])))
+        self.assertGreater(int(page.text_content("#model-count")), 4)
         self.assertGreater(len(self.points(page)), 8)
         self.assertGreater(page.locator(".series-label").count(), 0)
         for tab in self.texts(page, "#metric-tabs button"):
@@ -315,7 +317,9 @@ class PageTests(unittest.TestCase):
         page.click('#metric-tabs [data-key="livebench_coding"]')
         self.assertEqual(query(page), {"metric": "livebench_coding"})
         self.assertTrue(page.is_visible("#empty-state"))
-        self.assertEqual(page.text_content("#empty-title"), "Only 2 selected models have LiveBench Coding data")
+        # One family with two variants: the title counts families, the hint counts points.
+        self.assertEqual(page.text_content("#empty-title"), "Only 1 selected model has LiveBench Coding data")
+        self.assertEqual(page.text_content("#empty-text"), "The chart needs at least 3 points with data.")
         self.assertEqual(page.text_content("#empty-action"), "Show models with LiveBench Coding data")
         page.click("#empty-action")
         self.assertTrue(page.is_hidden("#empty-state"))
@@ -482,12 +486,35 @@ class PageTests(unittest.TestCase):
         self.assertNotIn("deprecated", query(page))
         self.assertNotIn("claude-sonnet-5", self.points(page))
 
-        # A selection of only hidden deprecated families says so, not "no reasoning levels".
+        # A selection of only hidden deprecated families says so and offers to show them.
         page = self.open("?models=claude-sonnet-5")
-        self.assertEqual(page.text_content("#empty-title"), "No models to show")
+        self.assertEqual(page.text_content("#empty-title"), "The selected models are deprecated")
+        self.assertTrue(page.is_hidden("#empty-text"))
+        self.assertEqual(page.text_content("#model-count"), "0")
         self.assertEqual(self.texts(page, "#effort-buttons button"), [])
-        page.click("#deprecated-toggle")
-        self.assertEqual(page.text_content("#empty-title"), "Only 2 selected models have Intelligence data")
+        page.click("#empty-action:text-is('Show deprecated')")
+        self.assertEqual(page.get_attribute("#deprecated-toggle", "aria-pressed"), "true")
+        self.assertEqual(page.text_content("#empty-title"), "Only 1 selected model has Intelligence data")
+        self.assertEqual(page.text_content("#model-count"), "1")
+        # The count matches the listed families while deprecated ones are hidden.
+        page = self.open("?models=claude-opus-5-5,claude-sonnet-5")
+        self.assertEqual(page.text_content("#model-count"), "1")
+        self.assertEqual({f for f, on in self.rows(page) if on}, {"claude-opus-5-5"})
+
+    def test_defaults_missing_from_the_data(self):
+        page = self.open(models=[m for m in MODELS if m["family"] != "gpt-6-luna"])
+        self.assertEqual(page.text_content("#model-count"), "7")
+        self.assertEqual(len([f for f, on in self.rows(page) if on]), 7)
+        page.click('.model-row[data-family="grok-4-7"]')
+        page.click("#reset-selection")
+        self.assertEqual(set(self.state(page, "selected")), DEFAULT_FAMILIES - {"gpt-6-luna"})
+        self.assertEqual(query(page), {})
+        page.click('.model-row[data-family="grok-4-7"]', button="right")
+        page.click('#context-menu button:text-is("Clear model selection")')
+        page.click('.model-row[data-family="grok-4-7"]', button="right")
+        page.click('#context-menu button:text-is("Reset model selection")')
+        self.assertEqual(page.text_content("#model-count"), "7")
+        self.assertEqual(query(page), {})
 
     # ---------- Sidebar ----------
     def test_search(self):
@@ -550,6 +577,12 @@ class PageTests(unittest.TestCase):
             enabled.first.click()
         self.assertEqual(page.text_content("#empty-title"), "No reasoning levels enabled")
         self.assertEqual(self.points(page), set())
+        # "Reset filters" restores the default selection and reasoning levels, not chart options.
+        page.click("#scale-linear")
+        self.assertTrue(page.is_hidden("#empty-text"))
+        page.click("#empty-action:text-is('Reset filters')")
+        self.assertEqual(self.points(page), DEFAULT_POINTS)
+        self.assertEqual(query(page), {"linear": "true"})
 
     def test_tier_and_all_toggles(self):
         page = self.open()
@@ -987,6 +1020,14 @@ class PageTests(unittest.TestCase):
         self.assertEqual(self.state(page, "selected"), [])
         self.assertEqual(page.text_content("#empty-title"), "No models selected")
         self.assertEqual(query(page), {"models": ""})
+        page.click('#metric-tabs [data-key="coding_index"]')
+        page.click('.model-row[data-family="grok-4-7"]', button="right")
+        page.click('#context-menu button:text-is("Highlight this family")')
+        page.fill("#model-search", "gem")
+        page.click("#empty-action:text-is('Reset filters')")
+        self.assertEqual(set(self.state(page, "selected")), DEFAULT_FAMILIES)
+        self.assertEqual([self.state(page, "query"), self.state(page, "highlights")], ["", []])
+        self.assertEqual(query(page), {"metric": "coding_index"})
 
         page = self.open("?metric=coding_index_v2&claude_plan=max-100x&max_response_time=-5&frontier=maybe"
                          "&linear=1&hide-reasoning=ultra")
