@@ -307,11 +307,11 @@ def deduplicate_models(entries):
     Many hosts serve the same model. Price and speed differ per host.
     We pick one entry per model slug with these rules, in this order:
 
-    1. Prefer an entry that has prices.
-    2. Prefer an entry that also has cost per task, intelligence index,
-       and end-to-end response time.
-    3. Prefer the entry from the model creator's own API.
-    4. Prefer the entry with the lowest cost per task.
+    1. Prefer an entry with non-zero input and output prices. main()
+       drops models without them, so a free endpoint (Google's 0/0 for
+       Gemma) must not win over a priced host.
+    2. Prefer the entry from the model creator's own API.
+    3. Prefer the entry with the lowest cost per task.
 
     The kept entry supplies the provider and price fields. Cost per task
     and performance come from model-level data (see clean_model).
@@ -329,18 +329,14 @@ def deduplicate_models(entries):
     def sort_key(entry):
         model = dict_or_empty(entry.get("model"))
         pricing = dict_or_empty(entry.get("pricing"))
-        perf = dict_or_empty(entry.get("performance"))
         host = dict_or_empty(entry.get("host"))
         creator = dict_or_empty(model.get("creator"))
         cost_per_task = value_or_none(pricing.get("costPerTask"))
-        has_prices = (value_or_none(pricing.get("price1mInputTokens")) is not None
-                      and value_or_none(pricing.get("price1mOutputTokens")) is not None)
-        complete = (cost_per_task is not None
-                    and value_or_none(model.get("intelligenceIndex")) is not None
-                    and value_or_none(perf.get("medianEndToEndResponseTimeSeconds")) is not None)
+        has_prices = bool(value_or_none(pricing.get("price1mInputTokens"))
+                          and value_or_none(pricing.get("price1mOutputTokens")))
         first_party = host.get("name") == creator.get("name")
         # min() picks the best entry, so "good" must sort as "small".
-        return (not has_prices, not complete, not first_party,
+        return (not has_prices, not first_party,
                 cost_per_task if cost_per_task is not None else float("inf"))
 
     result = []

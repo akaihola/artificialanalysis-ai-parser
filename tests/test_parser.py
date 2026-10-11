@@ -195,6 +195,29 @@ class ParserTests(unittest.TestCase):
             with self.subTest(name=name, reasoning=reasoning):
                 self.assertEqual(parser.parse_effort(name, reasoning), expected)
 
+    def test_deduplicate_prefers_priced_first_party(self):
+        def host(name, prices, cost=None, e2e=None):
+            return {"label": f"Model {name}", "host": {"name": name},
+                    "model": {"slug": "m", "creator": {"name": "Lab"}, "intelligenceIndex": 40},
+                    "pricing": {"price1mInputTokens": prices[0], "price1mOutputTokens": prices[1],
+                                "costPerTask": cost},
+                    "performance": {"medianEndToEndResponseTimeSeconds": e2e}}
+
+        for hosts, expected in [
+            # Host-level cost and response time no longer matter: model-level data feeds the chart.
+            ([host("Third", (0.75, 2.95), cost=1, e2e=5), host("Lab", (0.3, 1.2))], "Lab"),
+            ([host("Lab", ("$undefined", 1.2)), host("Third", (0.75, 2.95))], "Third"),
+            # A free endpoint must not hide a priced host (main() drops zero prices).
+            ([host("Lab", (0, 0), cost=1, e2e=5), host("Third", (0.18, 0.5))], "Third"),
+            ([host("Free", (0, 0), cost=0.1), host("Dear", (2, 8), cost=3),
+              host("Cheap", (1, 4), cost=2), host("Unknown", (0.5, 1))], "Cheap"),
+            # Zero price everywhere: the model is dropped later, as before.
+            ([host("Lab", (0, 0)), host("Third", (0, 0))], "Lab"),
+        ]:
+            with self.subTest(expected=expected):
+                [best] = parser.deduplicate_models(hosts)
+                self.assertEqual(best["host"]["name"], expected)
+
     def test_model_level_metadata_and_performance(self):
         row = copy.deepcopy(ROW)
         row["label"] = "Test model (high)"  # host label; AA's model name wins

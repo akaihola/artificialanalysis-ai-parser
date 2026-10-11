@@ -15,7 +15,7 @@ In August 2026 the site changed its data model again. The `hostsModels` key is g
 The Python parser in this project:
 
 - **Extracts** the `rows` array from the RSC stream with a standard JSON decoder
-- **Deduplicates** ~1,100 host-model pairs down to ~400 unique models. For each model, it prefers the endpoint of the model creator. If there is none, it takes the complete endpoint with the lowest cost per task. That endpoint supplies the provider and prices
+- **Deduplicates** ~1,100 host-model pairs down to ~400 unique models. For each model, it prefers the endpoint of the model creator. If there is none, it takes the endpoint with the lowest cost per task. Endpoints with a zero price count only when no host has prices. The chosen endpoint supplies the provider and prices
 - **Joins** model-level data from the models leaderboard: benchmark scores, cost per task and performance (one value per model variant), plus the family, lab and release date from the site navigation in the same stream
 - **Cleans** the output to only essential fields (pricing, IQ, speed, cost per task, response time, context window)
 - **Outputs** `models.json` — ~390 models with pricing, ready for downstream use
