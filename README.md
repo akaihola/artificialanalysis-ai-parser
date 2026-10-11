@@ -15,10 +15,10 @@ In August 2026 the site changed its data model again. The `hostsModels` key is g
 The Python parser in this project:
 
 - **Extracts** the `rows` array from the RSC stream with a standard JSON decoder
-- **Deduplicates** ~1,100 host-model pairs down to ~400 unique models. For each model, it prefers the endpoint of the model creator. If there is none, it takes the endpoint with the lowest cost per task. Endpoints with a zero price count only when no host has prices. The chosen endpoint supplies the provider and prices
+- **Deduplicates** ~1,100 host-model pairs down to ~470 unique models. For each model, it prefers the endpoint of the model creator. If there is none, it takes the endpoint with the lowest cost per task. Endpoints with a zero price count only when no host has prices. The chosen endpoint supplies the provider and prices
 - **Joins** model-level data from the models leaderboard: benchmark scores, cost per task and performance (one value per model variant), plus the family, lab and release date from the site navigation in the same stream
 - **Cleans** the output to only essential fields (pricing, IQ, speed, cost per task, response time, context window)
-- **Outputs** `models.json` — ~390 models with pricing, ready for downstream use
+- **Outputs** `models.json` — about 450 models with pricing, ready for downstream use
 
 The result is a self-contained Python script with zero dependencies beyond the standard library.
 
@@ -31,6 +31,8 @@ python3 artificialanalysis.ai-parser.py --minimal --pretty
 ```
 
 ### Output
+
+Example output from an earlier run; the counts change with the data:
 
 ```
 Downloading RSC data from https://artificialanalysis.ai/leaderboards/providers?_rsc=hgvan ...
@@ -122,7 +124,7 @@ The RSC endpoint requires specific headers (`rsc: 1`, `next-router-state-tree`, 
 
 `intelligence-vs-cost.html` plots AI models by score and cost, in the style of the "Cost vs intelligence" chart on [slopalytics.com](https://slopalytics.com/). Each point is one model variant (one reasoning effort level), and a line joins the variants of one model family. The X axis shows the cost to run one benchmark task (USD, log scale by default). The Y axis shows the AA Intelligence Index. A dashed line marks the Pareto frontier: the variants that give the highest score for the money.
 
-The sidebar picks the model families and reasoning levels to plot, a subscription plan for Claude and for Codex, and a maximum response time. With a plan picked, the X axis shows the effective cost per task: the page scales the API cost of Anthropic models, and of OpenAI models that are not open weights, by the plan's monthly fee divided by the API value of its allowance. Hover over a point for its details. Click it to pin it, then hover over another point to compare the two. The selection, benchmark, plans and chart options are kept in the page URL, so a link shows the same chart.
+The sidebar picks the model families and reasoning levels to plot, a subscription plan for Claude and for Codex, and a maximum response time. With a plan picked, the X axis shows the effective cost per task: the page scales the API cost of Anthropic models, and of OpenAI models that are not open weights, by the plan's monthly fee divided by the API value of its allowance. Hover over a point for its details. Click it to pin it, then hover over another point to compare the two. The selection, benchmark, plans, response time limit and chart options are kept in the page URL, so a link shows the same chart. Zoom Y to Pareto is the exception: it lasts only for the visit.
 
 The Y axis can show six scores: the Intelligence Index, SciCode, the AIME 2025 math contest score, Terminal-Bench v4.0, LiveBench Coding, or LiveBench Agentic Coding. Use the benchmark tabs in the page header to switch. The Pareto line follows the selected score.
 
@@ -201,7 +203,7 @@ The focused fixtures under `tests/fixtures/` contain selected official rows and
 category definitions; their metadata records the source commit and retrieval.
 The parser tests use them (see [Tests](#tests)).
 
-The page adds one filter that the original site does not have: **maximum end-to-end response time**. Reasoning models can think for minutes before they answer. Move the slider to fade out models that are slower than your limit. The page then computes the Pareto line again from the models that remain. This shows you the best value models that are also fast enough for your use case.
+Besides the benchmark tabs, the plan selectors, Show deprecated and Zoom Y to Pareto, the page adds a filter that slopalytics does not have: **maximum end-to-end response time**. Reasoning models can think for minutes before they answer. Move the slider to fade out models that are slower than your limit. The page then computes the Pareto line again from the models that remain. This shows you the best value models that are also fast enough for your use case.
 
 To use the page:
 
@@ -213,7 +215,7 @@ The sidebar lists the model families that have cost data: the curated Frontier a
 
 The buttons at the right of the header switch between light and dark themes, download the chart as a PNG image, show the whole page full screen, and replace the chart with a table of the same variants. The table lists every score, the cost per task and the response time, sorted by the selected benchmark. The `?` button opens the help text, and the `…` button turns the family labels on or off and clears highlights.
 
-On a phone, or in a window 900 pixels wide or less, the sidebar moves into a full-screen sheet behind the "Models" button, together with the plan selectors and the response time slider. A two-column legend under the chart takes the place of the labels. Tap near a point to see its details in a card at the bottom of the screen.
+On a phone, or in a window 900 pixels wide or less, the sidebar moves into a full-screen sheet behind the "Models" button, together with the plan selectors, the response time slider and the Labels toggle. The PNG, full-screen and `…` buttons are not shown at this width. A two-column legend under the chart takes the place of the labels. Tap near a point to see its details in a card at the bottom of the screen.
 
 The page has no build step and no script dependencies; it loads the DM Sans font from Google Fonts. It also has tooltips, keyboard navigation, and light and dark themes.
 
@@ -229,15 +231,18 @@ The browser tests in `tests/test_ui.py` drive `intelligence-vs-cost.html` in Chr
 Firefox with [Playwright for Python](https://playwright.dev/python/). The test fixture serves
 this folder with `http.server` on a free port. Most tests replace `models.json` with a small
 fixture, so their expected values do not change when the data does; one smoke test loads the
-real `models.json`. Run the parser and browser tests together with:
+real `models.json`. Run the parser and browser tests together with a pinned Playwright
+version (the tests were last run with 1.63):
 
 ```bash
-uv run --with playwright python3 -m unittest discover -s tests -v
+uv run --with 'playwright~=1.63.0' python3 -m unittest discover -s tests -v
 ```
 
-Without Playwright, `python3 -m unittest discover -s tests -v` runs the parser tests and
-skips the browser tests. Playwright needs its Chromium and Firefox builds; install them once
-with `uv run --with playwright playwright install chromium firefox` if they are missing.
+Pin the Playwright version whose browser builds are installed: an unpinned `--with playwright`
+can pick a release that expects other builds. Without Playwright,
+`python3 -m unittest discover -s tests -v` runs the parser tests and skips the browser tests.
+Only if the matching Chromium and Firefox builds are missing, install them once with
+`uv run --with 'playwright~=1.63.0' playwright install chromium firefox`.
 
 ## License
 
