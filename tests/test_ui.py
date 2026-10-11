@@ -515,6 +515,30 @@ class PageTests(unittest.TestCase):
         self.assertEqual(page.text_content("#model-count"), "1")
         self.assertEqual({f for f, on in self.rows(page) if on}, {"claude-opus-5-5"})
 
+    def test_empty_state_names_the_filter(self):
+        # The reasoning filter hides both Opus variants and Astra's max: Opus has data.
+        page = self.open("?models=claude-opus-5-5,gpt-6-astra&hide-reasoning=high,max")
+        self.assertEqual(page.text_content("#empty-title"), "Hidden reasoning levels leave 1 point")
+        self.assertEqual(page.text_content("#empty-text"),
+                         "3 more Intelligence points are at hidden reasoning levels. The chart needs at least 3.")
+        page.click("#empty-action:text-is('Show all reasoning levels')")
+        self.assertTrue(page.is_hidden("#empty-state"))
+        self.assertEqual(self.points(page), {"claude-opus-5-5-high", "claude-opus-5-5", "gpt-6-astra-medium", "gpt-6-astra"})
+        self.assertEqual(query(page), {"models": "claude-opus-5-5,gpt-6-astra", "hide-reasoning": ""})
+
+        # Hidden deprecated Sonnet 5 holds the other points.
+        page = self.open("?models=claude-sonnet-5,grok-4-7")
+        self.assertEqual(page.text_content("#empty-title"), "Hidden deprecated models leave 1 point")
+        self.assertEqual(page.text_content("#empty-text"),
+                         "2 more Intelligence points are from deprecated models. The chart needs at least 3.")
+        page.click("#empty-action:text-is('Show deprecated')")
+        self.assertEqual(self.points(page), {"claude-sonnet-5-high", "claude-sonnet-5", "grok-4-7"})
+
+        # Too little data even at every level: a family whose data is at a hidden level still counts.
+        page = self.open("?models=gpt-6-astra&metric=livebench_agentic_coding&hide-reasoning=max")
+        self.assertEqual(page.text_content("#empty-title"), "Only 1 selected model has LiveBench Agentic Coding data")
+        self.assertEqual(page.text_content("#empty-action"), "Show models with LiveBench Agentic Coding data")
+
     def test_defaults_missing_from_the_data(self):
         page = self.open(models=[m for m in MODELS if m["family"] != "gpt-6-luna"])
         self.assertEqual(page.text_content("#model-count"), "7")

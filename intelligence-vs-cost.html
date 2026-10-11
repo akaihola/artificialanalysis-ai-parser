@@ -1890,13 +1890,17 @@ function familiesWithData(metricId) {
 /**
  * Why the chart is empty, and the one action that fixes it: "Reset filters" when nothing
  * is selected or every reasoning level is hidden (as slopalytics), "Show deprecated" when
- * every selected family is hidden as deprecated, or more models when too few selected
- * variants have data for the benchmark.
+ * every selected family is hidden as deprecated. With too few points, the cause is the
+ * first of these that alone brings back enough points: hidden reasoning levels, then
+ * hidden deprecated families; otherwise too few selected variants have data for the
+ * benchmark. The speed filter is never the cause: its faint points count.
  */
 function renderEmpty(m, show) {
   els.empty.hidden = !show;
   if (!show) return;
-  const tab = m.metric.tab;
+  const tab = m.metric.tab, need = CONFIG.minChartPoints, n = m.rows.length;
+  const rowsWith = (patch) => buildRows(state.data, { ...state, ...patch }).rows;
+  const points = (k) => `${k} ${k === 1 ? "point" : "points"}`;
   let title, text = "", action = null;
   if (!state.selected.length) {
     title = "No models selected";
@@ -1908,13 +1912,28 @@ function renderEmpty(m, show) {
     title = "No reasoning levels enabled";
     action = { id: "reset", label: "Reset filters" };
   } else {
-    const families = new Set(m.rows.map((r) => r.family)).size;
-    title = families
-      ? `Only ${families} selected model${families === 1 ? " has" : "s have"} ${tab} data`
-      : `No ${tab} data for the selected models`;
-    text = `The chart needs at least ${CONFIG.minChartPoints} points with data.`;
-    const more = !familiesWithData(m.metric.id).every((f) => state.selected.includes(f)) || state.excluded.length > 0;
-    if (more) action = { id: "data", label: `Show models with ${tab} data` };
+    const allLevels = state.excluded.length ? rowsWith({ excluded: [] }) : m.rows;
+    const withDeprecated = state.deprecated ? m.rows : rowsWith({ deprecated: true });
+    if (allLevels.length >= need) {
+      title = `Hidden reasoning levels leave ${n ? points(n) : "no points"}`;
+      text = `${allLevels.length - n} more ${tab} ${allLevels.length - n === 1 ? "point is" : "points are"} ` +
+        `at hidden reasoning levels. The chart needs at least ${need}.`;
+      action = { id: "levels", label: "Show all reasoning levels" };
+    } else if (withDeprecated.length >= need) {
+      title = `Hidden deprecated models leave ${n ? points(n) : "no points"}`;
+      text = `${withDeprecated.length - n} more ${tab} ${withDeprecated.length - n === 1 ? "point is" : "points are"} ` +
+        `from deprecated models. The chart needs at least ${need}.`;
+      action = { id: "deprecated", label: "Show deprecated" };
+    } else {
+      // Count the families with data at any reasoning level, so none is said to lack data.
+      const families = new Set(allLevels.map((r) => r.family)).size;
+      title = families
+        ? `Only ${families} selected model${families === 1 ? " has" : "s have"} ${tab} data`
+        : `No ${tab} data for the selected models`;
+      text = `The chart needs at least ${need} points with data.`;
+      const more = !familiesWithData(m.metric.id).every((f) => state.selected.includes(f)) || state.excluded.length > 0;
+      if (more) action = { id: "data", label: `Show models with ${tab} data` };
+    }
   }
   els.emptyTitle.textContent = title;
   els.emptyText.textContent = text;
@@ -2066,6 +2085,7 @@ els.emptyAction.addEventListener("click", () => {
   const action = els.emptyAction.dataset.action;
   if (action === "reset") resetFilters();
   else if (action === "deprecated") { state.deprecated = true; update(); }
+  else if (action === "levels") { state.excluded = []; update(); }
   else showModelsWithData();
 });
 
