@@ -4,7 +4,18 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 ## Ordered backlog
 
+- [*] Fix the scraper's first-party host matching: "Alibaba" vs "Alibaba Cloud", "Z AI"
+  vs "Zai", "Amazon" vs "Amazon Bedrock" and "Microsoft" vs "Microsoft Azure" fail to
+  match, so the cheapest third-party host is picked instead.
+
+- [*] Refresh the curated Frontier/Notable model lists and family colours in
+  `intelligence-vs-cost.html` when new releases arrive.
+  - Depends on: [5]
+
 ## Scheduled
+
+- [5] Rebuild the cost vs intelligence chart in the style of slopalytics.com, keeping
+  our scraper, speed slider, benchmark selector and API/subscription plans.
 
 - [*] Task [4] and Kandev task 2feedf9a-4272-4569-aaaa-f7af919e5f3c tried to fix this.
   It now works correctly on Chromium, but the `Models` drop-down doesn't open on
@@ -49,6 +60,7 @@ Rules for TASKS.md usage are at the bottom of the file.
 [2]: docs/tasks/2-terminal-bench-field-parsing.md
 [3]: docs/tasks/3-additional-coding-benchmarks.md
 [4]: docs/tasks/4-provider-model-drop-down.md
+[5]: docs/tasks/5-slopalytics-cost-chart.md
 [*]: TASKS.md
 
 ---
