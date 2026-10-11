@@ -240,6 +240,7 @@ class PageTests(unittest.TestCase):
         self.assertEqual(query(page), {})
         self.assertEqual(self.points(page), DEFAULT_POINTS)
         self.assertEqual(page.text_content("#model-count"), "8")
+        self.assertEqual(page.text_content(".side-heading h2"), "Models 8")
         self.assertEqual({f for f, on in self.rows(page) if on}, DEFAULT_FAMILIES)
         self.assertEqual(self.texts(page, "#metric-tabs button"),
                          ["Intelligence", "Coding (SciCode)", "Math (AIME 2025)", "Terminal-Bench v4.0",
@@ -279,6 +280,22 @@ class PageTests(unittest.TestCase):
                 self.assertGreater(len(self.points(page)), 0, tab)
         page.click("#table-button")
         self.assertGreater(page.locator("#data-table tbody tr").count(), 2)
+
+    def test_desktop_layout_fits_the_window(self):
+        for viewport in ({"width": 901, "height": 700}, {"width": 1024, "height": 768},
+                         {"width": 1280, "height": 800}, DESKTOP):
+            page = self.open(viewport=viewport)
+            self.assertFalse(self.state(page, "compact"))
+            box = page.evaluate("""() => ({ scroll: document.documentElement.scrollWidth, inner: innerWidth,
+                sidebar: document.getElementById('sidebar').getBoundingClientRect().right,
+                settings: document.getElementById('settings-button').getBoundingClientRect().right })""")
+            self.assertLessEqual(box["scroll"], box["inner"], viewport)
+            self.assertLessEqual(box["sidebar"], box["inner"], viewport)
+            self.assertLessEqual(box["settings"], box["inner"], viewport)
+            # The plan toggles stay on one line each.
+            heights = page.eval_on_selector_all("#plan-sections button", "els => els.map((e) => e.offsetHeight)")
+            self.assertTrue(all(h < 20 for h in heights), (viewport, heights))
+            page.context.close()
 
     # ---------- Header and toolbar ----------
     def test_benchmark_tabs_change_title_and_url(self):
@@ -1037,6 +1054,18 @@ class PageTests(unittest.TestCase):
         page.touchscreen.tap(chart["x"] + chart["width"] - 20, chart["y"] + chart["height"] - 20)
         self.assertIsNone(self.state(page, "pinned"))
         self.assertTrue(page.is_hidden("#tooltip"))
+
+    def test_mobile_header(self):
+        page = self.open("?metric=livebench_agentic_coding", viewport=MOBILE, has_touch=True)
+        # A shared link shows its benchmark tab, scrolled into view.
+        tab = page.locator('#metric-tabs [data-key="livebench_agentic_coding"]').bounding_box()
+        self.assertGreaterEqual(tab["x"], 0)
+        self.assertLessEqual(tab["x"] + tab["width"], MOBILE["width"])
+        self.assertGreater(page.eval_on_selector("#metric-tabs", "e => e.scrollLeft"), 0)
+        self.assertLessEqual(page.evaluate("document.documentElement.scrollWidth"), MOBILE["width"])
+        # Header icons keep 32 px touch targets.
+        for button in ("#theme-toggle", "#table-button", "#help-button"):
+            self.assertEqual(page.eval_on_selector(button, "e => e.offsetWidth"), 32, button)
 
     # ---------- Pure helpers ----------
     def test_cost_formatter(self):
