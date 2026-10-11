@@ -117,7 +117,7 @@ The RSC endpoint requires specific headers (`rsc: 1`, `next-router-state-tree`, 
 ## Limitations
 
 - **No API key = fragile.** The RSC endpoint is an internal Next.js mechanism. If the site changes its chunk format again, the bracket-counting may need updating.
-- **Placeholder values.** The RSC stream marks missing values with strings such as `"$undefined"`. The parser turns them into `null`. Some entries hold a reference string instead of a nested object. The deduplication step prefers entries with complete data.
+- **Placeholder values.** The RSC stream marks missing values with strings such as `"$undefined"`. The parser turns them into `null`. Some entries hold a reference string instead of a nested object. Missing host-level values do not affect deduplication: it keeps the model creator's priced endpoint, or else the priced endpoint with the lowest cost per task, and models priced zero at every host are dropped.
 - **Official API is preferred** for production use. This parser is a workaround for when you don't have (or don't want) an API key. See [artificialanalysis.ai/documentation](https://artificialanalysis.ai/documentation) for the free API tier (1,000 req/day).
 
 ## Companion: the intelligence vs cost page
