@@ -22,10 +22,10 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 ## In Progress
 
-- [5] Rebuild the cost vs intelligence chart in the style of slopalytics.com, keeping
-  our scraper, speed slider, benchmark selector and API/subscription plans.
-
 ## Completed / Accepted
+
+- [ ] [5] Rebuild the cost vs intelligence chart in the style of slopalytics.com, keeping
+  our scraper, speed slider, benchmark selector and API/subscription plans.
 
 - [ ] [*] Task [4] tried to condense provider and model drop-downs into a good model
   selection UI. It utterly failed, and we lost
