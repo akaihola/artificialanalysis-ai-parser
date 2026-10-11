@@ -763,6 +763,28 @@ class PageTests(unittest.TestCase):
         self.assertTrue(page.is_hidden("#context-menu"))
 
     # ---------- Chart ----------
+    def test_long_labels_fit_the_chart(self):
+        long = [variant("nemotron-nano", "nemotron-nano", "NVIDIA Nemotron 3 Nano 30B A3B Reasoning", "nvidia",
+                        "NVIDIA", "default", 47, 0.08, 40),
+                variant("gpt-instant", "gpt-instant", "GPT-5.5 Instant (June 2026) Extended Preview", *OPENAI,
+                        "none", 41, 0.07, 9)]
+        page = self.open("?models=nemotron-nano,gpt-instant,grok-4-7&hide-reasoning=", models=MODELS + long)
+        right = page.eval_on_selector("#chart", "e => e.getBoundingClientRect().right")
+        labels = {row[0]: row[1:] for row in page.eval_on_selector_all(".series-label", """els => els.map((g) => {
+            const t = g.querySelector('text');
+            return [g.dataset.label, t.textContent, t.getAttribute('x'), t.getBoundingClientRect().right,
+                    g.querySelector('title')?.textContent ?? null, g.querySelectorAll('use').length]; })""")}
+        self.assertEqual(set(labels), {"nemotron-nano", "gpt-instant", "grok-4-7"})
+        for family, (text, x, text_right, title, logos) in labels.items():
+            self.assertLessEqual(text_right, right + 0.5, family)
+        # Cut with an ellipsis, with the full name as the title. A lab without a logo has no mark.
+        text, x, _, title, logos = labels["nemotron-nano"]
+        self.assertTrue(text.endswith("…") and "NVIDIA Nemotron".startswith(text[:15]), text)
+        self.assertEqual([x, title, logos], ["27", "NVIDIA Nemotron 3 Nano 30B A3B Reasoning", 0])
+        self.assertTrue(labels["gpt-instant"][0].endswith("…"))
+        self.assertEqual(labels["gpt-instant"][1:2] + labels["gpt-instant"][3:], ["53", "GPT-5.5 Instant (June 2026) Extended Preview", 1])
+        self.assertEqual(labels["grok-4-7"][0:2] + labels["grok-4-7"][3:], ["Grok 4.7", "53", None, 1])
+
     def test_hover_tooltip_rows(self):
         page = self.open()
         page.hover('#chart [data-id="claude-opus-5-5"]')
