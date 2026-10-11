@@ -120,9 +120,9 @@ The RSC endpoint requires specific headers (`rsc: 1`, `next-router-state-tree`, 
 
 ## Companion: Intelligence Index vs. Cost per Task plot
 
-`intelligence-vs-cost.html` replicates the scatter plot from the [artificialanalysis.ai](https://artificialanalysis.ai/) home page. Each point is one AI model. The X axis shows the cost to run one benchmark task (USD, log scale). The Y axis shows the AA Intelligence Index. A blue step line marks the Pareto frontier: the models that give the most intelligence for the money.
+`intelligence-vs-cost.html` plots AI models by score and cost, in the style of the "Cost vs intelligence" chart on [slopalytics.com](https://slopalytics.com/). Each point is one model variant (one reasoning effort level), and a line joins the variants of one model family. The X axis shows the cost to run one benchmark task (USD, log scale by default). The Y axis shows the AA Intelligence Index. A dashed line marks the Pareto frontier: the variants that give the highest score for the money.
 
-The Y axis can show six scores: the Intelligence Index, SciCode, the AIME 2025 math contest score, Terminal-Bench v4.0, LiveBench Coding, or LiveBench Agentic Coding. Use the radio buttons in the filter row to switch. The Pareto line follows the selected score.
+The Y axis can show six scores: the Intelligence Index, SciCode, the AIME 2025 math contest score, Terminal-Bench v4.0, LiveBench Coding, or LiveBench Agentic Coding. Use the benchmark tabs in the page header to switch. The Pareto line follows the selected score.
 
 Coding uses SciCode scaled to 0–100 because the models feed no longer supplies
 the former composite Coding Index. These scores are not historically comparable.
@@ -135,7 +135,7 @@ scores fails before replacing `models.json`, preserving the last usable data.
 scores are downloadable in the existing models leaderboard RSC feed as
 `terminalbenchV40`. The parser joins by exact model slug and scales fractions to
 0–100. Zero is a valid score; missing scores are null and excluded from this
-view. Select it with the radio button or `?metric=terminalbench_v4_0`.
+view. Select it with its tab or `?metric=terminalbench_v4_0`.
 The cost axis still uses Intelligence Index task costs, including any selected
 subscription estimate. The response time filter uses the existing response-time
 measurements, not Terminal-Bench task durations. This is internal page data,
@@ -158,8 +158,8 @@ is null. The table and tooltips display completed/expected subtask counts so
 partial results remain visible.
 
 Select `?metric=livebench_coding` or `?metric=livebench_agentic_coding`, or use
-the radio buttons. Both views use the existing provider/model selectors,
-Pareto calculation, and response-time filter. Their cost axis is the AA
+the tabs. Both views use the same model selection, Pareto calculation, and
+response-time filter. Their cost axis is the AA
 Intelligence Index task cost with the selected subscription adjustment, and
 the response time is AA's measurement. Neither measures LiveBench evaluation
 cost or duration.
@@ -207,7 +207,7 @@ node --test tests/test_ui.cjs
 The UI tests run the page's inline script with small DOM stubs in Node; they do
 not verify browser layout.
 
-The page adds one filter that the original site does not have: **maximum end-to-end response time**. Reasoning models can think for minutes before they answer. Move the slider to hide models that are slower than your limit. The page then computes the Pareto line again from the models that remain. This shows you the best value models that are also fast enough for your use case.
+The page adds one filter that the original site does not have: **maximum end-to-end response time**. Reasoning models can think for minutes before they answer. Move the slider to fade out models that are slower than your limit. The page then computes the Pareto line again from the models that remain. This shows you the best value models that are also fast enough for your use case.
 
 To use the page:
 
@@ -215,7 +215,7 @@ To use the page:
 2. Start a web server in this folder: `python3 -m http.server`.
 3. Open `http://localhost:8000/intelligence-vs-cost.html`.
 
-The page has no dependencies. It also has a table view, tooltips, keyboard navigation, and a dark mode.
+The page has no build step and no script dependencies; it loads the DM Sans font from Google Fonts. It also has tooltips, keyboard navigation, and light and dark themes.
 
 ## License
 

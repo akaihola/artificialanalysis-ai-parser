@@ -1,907 +1,1405 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Intelligence Index vs. Cost per Task</title>
-<style>
-  .viz-root {
-    color-scheme: light;
-    --surface-1: #fcfcfb;
-    --page: #f9f9f7;
-    --text-primary: #0b0b0b;
-    --text-secondary: #52514e;
-    --text-muted: #898781;
-    --grid: #e1e0d9;
-    --axis: #c3c2b7;
-    --series-1: #2a78d6;
-    --border: rgba(11, 11, 11, 0.10);
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:where(:not([data-theme="light"])) .viz-root {
-      color-scheme: dark;
-      --surface-1: #1a1a19;
-      --page: #0d0d0d;
-      --text-primary: #ffffff;
-      --text-secondary: #c3c2b7;
-      --text-muted: #898781;
-      --grid: #2c2c2a;
-      --axis: #383835;
-      --series-1: #3987e5;
-      --border: rgba(255, 255, 255, 0.10);
+<meta name="theme-color" content="#000000">
+<meta name="description" content="AI models plotted by benchmark score against cost per task, from Artificial Analysis data.">
+<title>Intelligence vs cost</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;450;500;550;600;650;700&display=swap">
+<script>
+  // Apply the stored theme, or the system theme, before the first paint.
+  (() => {
+    let theme = null;
+    try { theme = localStorage.getItem("theme"); } catch (e) { /* storage blocked */ }
+    if (theme !== "light" && theme !== "dark") {
+      theme = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
     }
-  }
-  :root[data-theme="dark"] .viz-root {
+    document.documentElement.dataset.theme = theme;
+  })();
+</script>
+<style>
+  /* ---------- Design tokens ---------- */
+  :root {
     color-scheme: dark;
-    --surface-1: #1a1a19;
-    --page: #0d0d0d;
-    --text-primary: #ffffff;
-    --text-secondary: #c3c2b7;
-    --text-muted: #898781;
-    --grid: #2c2c2a;
-    --axis: #383835;
-    --series-1: #3987e5;
-    --border: rgba(255, 255, 255, 0.10);
+    --bg: #000;
+    --fg: #fff;
+    --fg-2: #aaa39d;
+    --fg-3: #77716c;
+    --line: #1c1a18;
+    --line-2: #36312d;
+    --surface: #0d0b0a;
+    --hover: #141210;
+    --accent: #c5ac98;
+    --on-accent: #000;
+    --sidebar-width: 248px;
+    --header-height: 60px;
+    font-synthesis: none;
+    font-family: "DM Sans", system-ui, sans-serif;
+    color: var(--fg);
+    background: var(--bg);
+  }
+  :root[data-theme="light"] {
+    color-scheme: light;
+    --bg: #fff;
+    --fg: #20201e;
+    --fg-2: #625d57;
+    --fg-3: #77716c;
+    --line: #e8e4df;
+    --line-2: #ccc5be;
+    --surface: #f8f6f3;
+    --hover: #f1eeea;
+    --accent: #806047;
+    --on-accent: #fff;
   }
 
+  /* ---------- Resets ---------- */
   * { box-sizing: border-box; }
-  body.viz-root {
-    margin: 0;
-    background: var(--page);
-    color: var(--text-primary);
-    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-    line-height: 1.5;
+  body { margin: 0; user-select: none; -webkit-user-select: none; }
+  input { user-select: text; -webkit-user-select: text; }
+  button, input, a { -webkit-tap-highlight-color: transparent; }
+  button, input { font: inherit; }
+  button { color: inherit; cursor: pointer; background: none; border: 0; padding: 0; }
+  button:disabled { opacity: .4; cursor: default; }
+  a { color: inherit; text-decoration: none; }
+  button:hover, a:hover { color: var(--fg); }
+  button:focus-visible, a:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  ::selection { background: var(--accent); color: var(--on-accent); }
+  h2, h3 { margin: 0; }
+  svg.icon { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex-shrink: 0; }
+  .sr-only {
+    position: absolute; width: 1px; height: 1px; padding: 0; border: 0;
+    overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap;
   }
-  main { max-width: 1060px; margin: 0 auto; padding: 24px 20px 48px; }
-  h1 { font-size: 24px; margin: 0 0 4px; }
-  .subtitle { color: var(--text-secondary); font-size: 14px; margin: 0 0 20px; }
+  .logo-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
 
-  /* One filter row above the chart. All views use the same filter state. */
-  .filters {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 16px 28px;
-    padding: 12px 16px;
-    background: var(--surface-1);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    margin-bottom: 12px;
-    font-size: 14px;
+  /* ---------- App shell ---------- */
+  .app { display: grid; grid-template-rows: var(--header-height) minmax(0, 1fr); height: 100dvh; }
+  .app-header {
+    display: flex; align-items: center; gap: 24px; padding: 0 28px;
+    border-bottom: 1px solid var(--line);
   }
-  .filters label { display: flex; align-items: center; gap: 8px; }
-  .filters .grow { display: flex; align-items: center; gap: 10px; flex: 1 1 320px; }
-  input[type="range"] { flex: 1; min-width: 140px; accent-color: var(--series-1); }
-  input[type="number"] {
-    width: 72px;
-    padding: 3px 6px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--page);
-    color: var(--text-primary);
-    font: inherit;
+  .brand { flex-shrink: 0; white-space: nowrap; }
+  .brand strong { font-size: 24px; font-weight: 450; letter-spacing: -1.2px; }
+  .brand strong span { color: var(--accent); }
+  .view-tabs {
+    display: flex; align-self: stretch; align-items: stretch; gap: 22px; min-width: 0;
+    overflow-x: auto; scrollbar-width: none;
   }
-  .filters button {
-    padding: 4px 12px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--page);
-    color: var(--text-primary);
-    font: inherit;
-    cursor: pointer;
+  .view-tabs button {
+    position: relative; display: flex; align-items: center;
+    color: var(--fg-2); font-size: 12.5px; white-space: nowrap;
   }
-  .filters button[aria-pressed="true"] { background: var(--series-1); color: #fff; border-color: transparent; }
-  /* Model picker: one button that opens a searchable list grouped by provider. */
-  .model-picker { position: relative; z-index: 1; }
-  .model-picker-panel {
-    position: absolute;
-    top: calc(100% + 6px);
-    left: 0;
-    z-index: 10;
-    width: min(380px, calc(100vw - 64px));
-    max-height: min(460px, 65vh);
-    display: flex;
-    flex-direction: column;
-    background: var(--surface-1);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  .view-tabs button[aria-current="true"] { color: var(--fg); }
+  .view-tabs button[aria-current="true"]::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: 0;
+    height: 2px; border-radius: 2px; background: var(--accent);
   }
-  .model-picker-panel[hidden] { display: none; }
-  .model-picker-head { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px; border-bottom: 1px solid var(--border); }
-  .model-picker-head input[type="search"] {
-    flex: 1 1 100%;
-    padding: 5px 8px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--page);
-    color: var(--text-primary);
-    font: inherit;
+  .tab-divider { flex-shrink: 0; align-self: center; width: 1px; height: 14px; background: var(--line-2); }
+  .header-actions { display: flex; align-items: center; gap: 2px; margin-left: auto; flex-shrink: 0; }
+  .icon-button {
+    display: flex; align-items: center; justify-content: center;
+    width: 32px; height: 32px; color: var(--fg-2);
   }
-  .model-groups { overflow-y: auto; padding: 4px 0; }
-  .model-groups summary { display: flex; align-items: center; gap: 8px; padding: 4px 10px; cursor: pointer; font-weight: 600; }
-  .model-groups summary::before { content: "▸"; width: 10px; color: var(--text-muted); }
-  .model-groups details[open] > summary::before { content: "▾"; }
-  .model-groups summary .count { margin-left: auto; color: var(--text-muted); font-weight: 400; font-variant-numeric: tabular-nums; }
-  .model-groups label { padding: 2px 10px 2px 32px; }
-  .model-groups input { accent-color: var(--series-1); }
-  .model-groups .empty { padding: 8px 10px; color: var(--text-secondary); }
 
-  .status { color: var(--text-secondary); font-size: 13px; margin: 0 0 8px; }
-
-  .card {
-    position: relative;
-    background: var(--surface-1);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 16px 8px 8px;
+  .body-layout { display: grid; grid-template-columns: minmax(0, 1fr) var(--sidebar-width); min-height: 0; }
+  main { display: grid; grid-template-rows: minmax(0, 1fr) auto; min-width: 0; min-height: 0; }
+  .chart-section { display: flex; flex-direction: column; min-height: 0; padding: 18px 28px 10px; }
+  .chart-heading {
+    display: flex; flex-shrink: 0; align-items: center; justify-content: space-between;
+    gap: 16px; margin-bottom: 6px;
   }
-  .card.fullscreen-fallback, .card:fullscreen { background: var(--surface-1); overflow: hidden; padding: 16px; }
-  .card.fullscreen-fallback { position: fixed; inset: 0; z-index: 1000; margin: 0; }
-  .card.fullscreen-fallback, .card:fullscreen { height: 100vh; display: flex; flex-direction: column; }
-  .card.fullscreen-fallback .filters, .card:fullscreen .filters { flex: none; }
-  .card.fullscreen-fallback svg, .card:fullscreen svg { flex: 1; min-height: 0; }
-  #fullscreen-toggle { position: absolute; top: 10px; right: 10px; z-index: 1; width: 32px; height: 32px; padding: 0; font-size: 22px; line-height: 1; }
-  svg { display: block; width: 100%; height: auto; }
-  svg text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; }
-  /* Labels and lines must not block the mouse. Only the points react. */
-  svg text, svg path, svg line { pointer-events: none; }
-  /* A halo in the surface color keeps labels readable on top of lines. */
-  svg text.label { paint-order: stroke; stroke: var(--surface-1); stroke-width: 3px; stroke-linejoin: round; }
-
-  .legend {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px 22px;
-    padding: 10px 16px 4px;
-    font-size: 13px;
-    color: var(--text-secondary);
+  .chart-heading h2 { flex-shrink: 1; font-size: 16px; font-weight: 500; }
+  .chart-controls { display: flex; flex-shrink: 0; align-items: center; gap: 24px; }
+  .check-button {
+    display: inline-flex; align-items: center; gap: 8px; min-height: 32px;
+    color: var(--fg); font-size: 12px; white-space: nowrap;
   }
-  .legend span { display: inline-flex; align-items: center; gap: 7px; }
-  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .check-button[aria-pressed="true"], .check-button:enabled:hover { color: var(--accent); }
+  .selection {
+    display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center;
+    width: 12px; height: 12px; border: 1px solid var(--line-2); border-radius: 3px;
+    color: var(--on-accent);
+  }
+  [aria-pressed="true"] > .selection { background: var(--accent); border-color: var(--accent); }
+  .selection svg { width: 10px; height: 10px; stroke-width: 3; visibility: hidden; }
+  [aria-pressed="true"] > .selection svg { visibility: visible; }
+  .chart-scale { display: flex; flex-shrink: 0; gap: 12px; }
+  .chart-scale button {
+    min-height: 32px; padding: 4px 2px; color: var(--fg-3); font-size: 12px;
+    border-bottom: 1px solid transparent;
+  }
+  .chart-scale button[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); }
+  .chart-scale button:hover { color: var(--fg); }
 
-  .tooltip {
-    position: absolute;
+  .chart-wrap { position: relative; display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; }
+  .chart-canvas { position: relative; flex: 1; min-height: 0; }
+  .chart-canvas > svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .chart-svg { font-family: "DM Sans", system-ui, sans-serif; }
+  .chart-svg g[role="button"] { cursor: pointer; }
+  .chart-svg g[role="button"]:focus { outline: none; }
+
+  .empty {
+    position: absolute; inset: 0; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 10px; text-align: center;
+  }
+  .empty[hidden] { display: none; }
+  .empty strong { font-size: 17px; font-weight: 500; }
+  .empty p { margin: 0; max-width: 46ch; color: var(--fg-2); font-size: 12.5px; }
+  .text-button { color: var(--accent); font-size: 12px; }
+
+  /* ---------- Tooltip ---------- */
+  .chart-tooltip {
+    position: absolute; right: 8px; bottom: 72px; z-index: 3;
+    width: 272px; max-width: calc(100vw - 48px); padding: 14px 16px;
+    background: var(--surface); border: 1px solid var(--line-2); border-radius: 8px;
     pointer-events: none;
-    background: var(--surface-1);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18);
-    padding: 8px 12px;
-    font-size: 12.5px;
-    max-width: 260px;
-    opacity: 0;
-    transition: opacity 0.1s;
-    z-index: 5;
   }
-  .tooltip strong { font-size: 13px; }
-  .tooltip table { border-collapse: collapse; margin-top: 4px; }
-  .tooltip td { padding: 1px 0; color: var(--text-secondary); }
-  .tooltip td:last-child { padding-left: 14px; color: var(--text-primary); text-align: right; font-variant-numeric: tabular-nums; }
-
-  /* Table view: the same data as the chart, readable without color. */
-  .table-view { margin-top: 16px; overflow-x: auto; }
-  .table-view table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 13px;
-    background: var(--surface-1);
-    border: 1px solid var(--border);
-    border-radius: 10px;
+  .chart-tooltip[hidden] { display: none; }
+  .chart-tooltip.comparing { width: 400px; }
+  .chart-tooltip.pinned button, .chart-tooltip.pinned a { pointer-events: auto; }
+  .tooltip-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; }
+  .tooltip-head strong { display: inline-flex; align-items: center; gap: 8px; font-weight: 550; }
+  .tooltip-head button {
+    display: flex; align-items: center; justify-content: center;
+    width: 20px; height: 20px; color: var(--fg-3);
   }
-  .table-view caption { text-align: left; font-size: 13px; color: var(--text-secondary); padding: 0 2px 6px; }
-  .table-view th, .table-view td { padding: 6px 12px; text-align: left; border-top: 1px solid var(--grid); }
-  .table-view th { color: var(--text-secondary); font-weight: 600; border-top: none; }
-  .table-view td.num, .table-view th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .tooltip-head button svg { width: 14px; height: 14px; }
+  .chart-tooltip p { margin: 4px 0 12px; color: var(--fg-2); font-size: 11.5px; }
+  .tooltip-value { display: flex; justify-content: space-between; gap: 20px; padding: 4px 0; font-size: 12px; }
+  .tooltip-value span { color: var(--fg-2); }
+  .tooltip-value b { font-weight: 500; font-variant-numeric: tabular-nums; text-align: right; }
+  .tooltip-value small, .comparison-table small { display: block; color: var(--fg-3); font-size: 10.5px; font-weight: 400; }
+  .chart-tooltip a {
+    display: inline-block; margin-top: 10px; color: var(--accent); font-size: 11.5px;
+    text-decoration: underline; text-underline-offset: 3px;
+  }
+  .comparison-reference { display: flex; align-items: center; gap: 7px; margin-bottom: 8px; color: var(--fg-2); font-size: 11.5px; }
+  .comparison-table {
+    width: 100%; border-collapse: collapse; font-size: 11.5px;
+    font-variant-numeric: tabular-nums; text-align: right;
+  }
+  .comparison-table th, .comparison-table td { padding: 4px 0 4px 12px; font-weight: 400; }
+  .comparison-table thead th { color: var(--fg-3); font-size: 11px; border-bottom: 1px solid var(--line-2); }
+  .comparison-table th:first-child { padding-left: 0; color: var(--fg-2); text-align: left; }
+  .comparison-table td:last-child { font-weight: 550; }
 
-  .help { margin-top: 28px; font-size: 14px; color: var(--text-secondary); max-width: 72ch; }
-  .help h2 { font-size: 16px; color: var(--text-primary); margin: 18px 0 6px; }
-  .help p { margin: 6px 0; }
-  footer { margin-top: 28px; font-size: 12.5px; color: var(--text-muted); }
-  a { color: var(--series-1); }
+  /* ---------- Lab logos ---------- */
+  .lab-logo { flex-shrink: 0; vertical-align: middle; color: var(--fg); }
+  .lab-monogram {
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--hover); color: var(--fg-2); border-radius: 3px;
+    font-weight: 600; line-height: 1;
+  }
+
+  /* ---------- Footer ---------- */
+  footer {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 9px 28px; border-top: 1px solid var(--line); color: var(--fg-3); font-size: 11px;
+  }
+  footer a { color: var(--fg-2); }
+  .footer-links { display: flex; gap: 20px; white-space: nowrap; }
+  .footer-links a:last-child { color: var(--accent); }
+
+  /* ---------- Sidebar ---------- */
+  .sidebar {
+    display: flex; flex-direction: column; gap: 18px; height: 100%; min-height: 0;
+    padding: 16px 18px; overflow: auto; border-left: 1px solid var(--line);
+    scrollbar-width: thin; scrollbar-color: var(--line-2) var(--bg);
+  }
+  .sidebar > * { flex-shrink: 0; }
+  .side-heading { display: flex; align-items: center; gap: 8px; margin-bottom: -6px; }
+  .side-heading h2 { flex: 1; font-size: 15px; font-weight: 500; }
+  .side-heading h2 span {
+    margin-left: 6px; color: var(--fg-3); font-size: 11px; font-weight: 400;
+    font-variant-numeric: tabular-nums;
+  }
+  .side-heading button {
+    display: flex; align-items: center; justify-content: center;
+    width: 24px; height: 24px; color: var(--fg-3);
+  }
+  .side-heading button svg { width: 14px; height: 14px; }
+  .effort-filter h3, .section-head h3, .option-section h3 { font-size: 12px; font-weight: 550; }
+  #plan-sections { display: contents; }
+  .option-section h3 { white-space: nowrap; }
+  .effort-filter > div { display: flex; flex-wrap: wrap; gap: 4px 8px; margin-top: 8px; }
+  .effort-filter button { color: var(--fg); font-size: 11.5px; }
+  .effort-filter button[aria-pressed="false"] { color: var(--fg-3); text-decoration: line-through; }
+  .section-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+  .section-head h3 { flex: 1; }
+  .section-head button { color: var(--fg-3); font-size: 11.5px; }
+  .section-head button[aria-pressed="true"] { color: var(--accent); }
+  .section-head [role="group"] { display: flex; gap: 10px; }
+  .time-filter input[type="range"] {
+    --fill: 100%;
+    display: block; width: 100%; height: 22px; margin: 4px 0 0;
+    appearance: none; -webkit-appearance: none; background: none; cursor: pointer;
+  }
+  .time-filter input[type="range"]::-webkit-slider-runnable-track {
+    height: 1px; background: linear-gradient(to right, var(--accent) var(--fill), var(--line-2) var(--fill));
+  }
+  .time-filter input[type="range"]::-moz-range-track { height: 1px; background: var(--line-2); }
+  .time-filter input[type="range"]::-moz-range-progress { height: 1px; background: var(--accent); }
+  .time-filter input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 12px; height: 12px; margin-top: -5.5px;
+    border: 0; border-radius: 50%; background: var(--accent);
+  }
+  .time-filter input[type="range"]::-moz-range-thumb {
+    width: 12px; height: 12px; border: 0; border-radius: 50%; background: var(--accent);
+  }
+  .slider-readout { color: var(--fg-3); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+
+  /* ---------- Breakpoints ---------- */
+  @media (width >= 1600px) {
+    .view-tabs { gap: 26px; }
+    .view-tabs button { font-size: 13px; }
+  }
+  @media (width >= 761px) and (height <= 820px) {
+    .sidebar { gap: 14px; padding-top: 12px; }
+  }
+  @media (width <= 1150px) {
+    .app-header { gap: 16px; padding: 0 18px; }
+    .brand strong { font-size: 21px; }
+    .view-tabs { gap: 16px; }
+    .view-tabs button { font-size: 12px; }
+    .chart-section { padding-left: 18px; padding-right: 18px; }
+    footer { padding: 9px 18px; }
+  }
+  /* Narrow screens: one scrolling column. The mobile sheet comes in a later stage. */
+  @media (width <= 900px) {
+    .app { display: block; height: auto; }
+    .app-header { flex-wrap: wrap; gap: 0 16px; height: auto; min-height: 52px; padding: 0 16px; }
+    .view-tabs { order: 3; width: 100%; height: 42px; border-top: 1px solid var(--line); }
+    .body-layout, main { display: block; }
+    .chart-section { padding: 20px 16px 24px; }
+    .chart-heading { flex-wrap: wrap; gap: 4px 16px; }
+    .chart-controls { flex: 1 0 100%; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px; }
+    .chart-canvas { flex: none; aspect-ratio: 1 / 1.2; }
+    .sidebar { height: auto; border-left: 0; border-top: 1px solid var(--line); }
+    .brand strong { font-size: 21px; }
+    footer, .footer-links { flex-wrap: wrap; white-space: normal; }
+  }
+  @media (width <= 420px) {
+    .brand strong { font-size: 19px; }
+    .icon-button { width: 28px; }
+  }
 </style>
 </head>
-<body class="viz-root">
-<main>
-  <header style="display:flex; justify-content:space-between; align-items:start; gap:16px;">
-    <div>
-      <h1>Intelligence Index vs. Cost per Task</h1>
-      <p class="subtitle">Each point is one AI model. The best models are in the top left corner:
-        a high score for a low cost.</p>
+<body>
+<div class="app" id="app">
+  <header class="app-header">
+    <a class="brand" id="brand" href="intelligence-vs-cost.html" aria-label="Intelligence vs cost, reset all settings">
+      <strong><span>intelligence</span> vs cost</strong>
+    </a>
+    <nav class="view-tabs" id="metric-tabs" aria-label="Benchmark"></nav>
+    <div class="header-actions">
+      <button class="icon-button" id="theme-toggle" type="button"></button>
+      <button class="icon-button" id="png-button" type="button" title="Download PNG" aria-label="Download PNG">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" style="width:15px;height:15px"><path d="M12 3.5v11.5M7 10l5 5 5-5M4 16.5v3.5h16v-3.5"/></svg>
+      </button>
+      <button class="icon-button" id="fullscreen-button" type="button" title="Full screen" aria-label="Full screen">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" style="width:15px;height:15px"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg>
+      </button>
+      <button class="icon-button" id="table-button" type="button" title="Table view" aria-label="Table view" aria-pressed="false">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" style="width:15px;height:15px"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 10h17M3.5 15h17M9.5 10v9.5"/></svg>
+      </button>
+      <button class="icon-button" id="help-button" type="button" title="How to read this chart" aria-label="How to read this chart">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><path d="M9.4 9.3a2.7 2.7 0 0 1 5.2 1c0 1.8-2.6 2.4-2.6 4M12 17.6h.01"/></svg>
+      </button>
+      <button class="icon-button" id="settings-button" type="button" title="Chart settings" aria-label="Chart settings">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" style="width:17px;height:17px"><circle cx="5.5" cy="12" r=".9"/><circle cx="12" cy="12" r=".9"/><circle cx="18.5" cy="12" r=".9"/></svg>
+      </button>
     </div>
-    <button id="theme-toggle" class="theme" title="Switch between light and dark colors"
-            style="border:1px solid var(--border); background:var(--surface-1); color:var(--text-primary); border-radius:8px; padding:6px 12px; cursor:pointer; font:inherit;">
-      Theme</button>
   </header>
 
-  <div class="card" id="chart-card">
-  <div class="filters" id="filter-row">
-    <div class="model-picker" id="model-filters">
-      <button id="model-picker-toggle" type="button" aria-haspopup="true" aria-expanded="false"
-              aria-controls="model-picker">Models</button>
-      <div class="model-picker-panel" id="model-picker" role="dialog" aria-label="Select models" hidden>
-        <div class="model-picker-head">
-          <input id="model-search" type="search" placeholder="Search models or providers"
-                 aria-label="Search models or providers">
-          <button id="select-all-models" type="button">Select all</button>
-          <button id="clear-models" type="button">Clear all</button>
+  <div class="body-layout">
+    <main>
+      <section class="chart-section" id="chart-section" aria-labelledby="chart-title">
+        <div class="chart-heading">
+          <h2 id="chart-title">Cost vs intelligence</h2>
+          <div class="chart-controls" id="chart-controls">
+            <button class="check-button" id="pareto-toggle" type="button" aria-pressed="true"
+                    title="Show non-dominated variants: no other visible variant scores higher for the same or a lower cost.">
+              <span class="selection"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>Pareto line</button>
+            <div class="chart-scale" role="group" aria-label="Cost axis scale">
+              <button type="button" id="scale-linear" aria-pressed="false">Linear</button>
+              <button type="button" id="scale-log" aria-pressed="true">Log</button>
+            </div>
+            <button class="check-button" id="zoom-toggle" type="button" aria-pressed="false"
+                    title="Fit the score axis to the models on the Pareto line.">
+              <span class="selection"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>Zoom Y to Pareto</button>
+            <button class="check-button" id="deprecated-toggle" type="button" aria-pressed="false"
+                    title="List and plot deprecated models. Their lines are dashed.">
+              <span class="selection"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>Show deprecated</button>
+          </div>
         </div>
-        <div class="model-groups" id="model-groups"></div>
+        <div class="chart-wrap" id="chart-wrap">
+          <div class="chart-canvas" id="chart-canvas">
+            <svg class="chart-svg" id="chart" role="group" aria-label="Cost per task versus Intelligence index"></svg>
+          </div>
+          <div class="empty" id="empty-state" hidden>
+            <strong id="empty-title"></strong>
+            <p id="empty-text"></p>
+            <button class="text-button" id="empty-action" type="button"></button>
+          </div>
+          <div class="chart-tooltip" id="tooltip" role="status" hidden></div>
+        </div>
+      </section>
+      <footer>
+        <span>Data from <a href="https://artificialanalysis.ai/" target="_blank" rel="noreferrer">Artificial Analysis</a>
+          and <a href="https://livebench.ai/" target="_blank" rel="noreferrer">LiveBench</a></span>
+        <nav class="footer-links" aria-label="Credits">
+          <a href="https://github.com/lobehub/lobe-icons" target="_blank" rel="noreferrer">Lab logos: LobeHub Icons, MIT licence</a>
+          <a href="https://simpleicons.org/" target="_blank" rel="noreferrer">Xiaomi logo: Simple Icons, CC0</a>
+          <a href="https://github.com/akaihola/artificialanalysis-ai-parser" target="_blank" rel="noreferrer">Source on GitHub</a>
+        </nav>
+      </footer>
+    </main>
+
+    <aside class="sidebar" id="sidebar" aria-label="Filters">
+      <div class="side-heading">
+        <h2>Models<span id="model-count"></span></h2>
+        <button type="button" id="reset-selection" title="Reset selection" aria-label="Reset selection">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.4-5.7L4 8.6M4 3.8v4.8h4.8"/></svg>
+        </button>
       </div>
-    </div>
-    <label for="claude-plan-select">Claude plan</label>
-    <select id="claude-plan-select" aria-label="Claude subscription plan"></select>
-    <label for="codex-plan-select">Codex plan</label>
-    <select id="codex-plan-select" aria-label="Codex subscription plan"></select>
-    <div role="radiogroup" aria-label="Score on the Y axis" style="display:flex; flex-wrap:wrap; gap:14px;">
-      <label><input type="radio" name="metric" value="intelligence_index" checked> Intelligence</label>
-      <label><input type="radio" name="metric" value="coding_index"> Coding (SciCode)</label>
-      <label><input type="radio" name="metric" value="math_index"> Math (AIME 2025)</label>
-      <label><input type="radio" name="metric" value="terminalbench_v4_0"> Terminal-Bench v4.0</label>
-      <label><input type="radio" name="metric" value="livebench_coding"> LiveBench Coding</label>
-      <label><input type="radio" name="metric" value="livebench_agentic_coding"> LiveBench Agentic Coding</label>
-    </div>
-    <div class="grow">
-      <label for="e2e-slider">Max response time</label>
-      <input type="range" id="e2e-slider" min="0" max="200" value="200" step="1"
-             aria-label="Maximum end-to-end response time in seconds">
-      <input type="number" id="e2e-number" min="1" step="1" aria-label="Maximum end-to-end response time in seconds">
-      <span id="e2e-value" style="min-width:64px;">No limit</span>
-    </div>
-    <label><input type="checkbox" id="show-deprecated"> Show deprecated models</label>
-    <label><input type="checkbox" id="pareto-y-zoom"> Zoom Y axis to Pareto line</label>
-    <button id="table-toggle" aria-pressed="false">Table view</button>
-    <button id="fullscreen-toggle" aria-pressed="false" aria-label="Open chart in full screen" title="Open chart in full screen">⤢</button>
+      <!-- The model search and the Frontier, Notable and Other lists are added in the next stage. -->
+      <div class="effort-filter" role="group" aria-labelledby="effort-heading">
+        <h3 id="effort-heading">Reasoning</h3>
+        <div id="effort-buttons"></div>
+      </div>
+      <div id="plan-sections"></div>
+      <section class="option-section time-filter" aria-labelledby="time-heading">
+        <h3 id="time-heading">Max response time</h3>
+        <input type="range" id="time-slider" min="0" max="200" step="1" value="200"
+               aria-label="Maximum end-to-end response time" aria-describedby="time-readout">
+        <div class="slider-readout" id="time-readout">No limit</div>
+      </section>
+    </aside>
   </div>
+</div>
 
-  <p class="status" id="status">Loading model data …</p>
+<!--
+  Lab logos. OpenAI, Anthropic, Google, xAI, Meta, Kimi, Z.ai and DeepSeek marks are from
+  LobeHub Icons (https://github.com/lobehub/lobe-icons):
 
-    <div class="legend" id="legend">
-      <span><span class="dot" style="background:var(--series-1)"></span> On the Pareto line</span>
-      <span><span class="dot" style="background:var(--text-muted)"></span> Other models in the filter</span>
-      <span><span class="dot" style="background:var(--text-muted); opacity:.25"></span> Hidden by the time filter</span>
-    </div>
-    <svg id="chart" role="img" aria-label="Scatter chart of intelligence index against cost per task"></svg>
-    <div class="tooltip" id="tooltip"></div>
-  </div>
+  MIT License
 
-  <section class="help subscription-pricing">
-    <h2>How subscription pricing is estimated</h2>
-    <p>Subscription costs are modeled by applying each selected plan's monthly
-      fee and estimated allowance to the matching provider's API cost. This
-      assumes the allowance is fully used over a long window. It is a comparison
-      estimate, not a provider invoice, and actual limits and usage may differ.</p>
-  </section>
+  Copyright (c) 2023 LobeHub
 
-  <section class="table-view" id="table-view" hidden>
-    <table id="data-table">
-      <caption>The same models as in the chart. The list is sorted by the selected score, best first.</caption>
-      <thead>
-        <tr>
-          <th>Model</th><th>Creator</th><th>Provider</th>
-          <th class="num">Intelligence</th>
-          <th class="num">Coding (SciCode)</th>
-          <th class="num">Math</th>
-          <th class="num">Terminal-Bench v4.0</th>
-          <th class="num">LiveBench Coding</th>
-          <th class="num">LiveBench Agentic Coding</th>
-          <th class="num">Effective cost per task ($)</th>
-          <th class="num">Response time (s)</th>
-          <th>Pareto</th>
-        </tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-  </section>
+  Permission is hereby granted, free of charge, to any person obtaining a copy
+  of this software and associated documentation files (the "Software"), to deal
+  in the Software without restriction, including without limitation the rights
+  to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+  copies of the Software, and to permit persons to whom the Software is
+  furnished to do so, subject to the following conditions:
 
-  <section class="help">
-    <h2>How to read this chart</h2>
-    <p>The X axis shows the cost to run one task of the Artificial Analysis
-      Intelligence Index test suite. The scale is logarithmic: each step to the
-      right multiplies the effective cost by ten. Subscription prices are
-      estimates assuming you fully drain the allowance over a long window, not
-      provider invoices.</p>
-    <p>The Y axis shows one of six scores. Use the buttons in the filter row
-      to pick one. A higher value is better on all of them.</p>
-    <ul>
-      <li><strong>Intelligence</strong> — the Artificial Analysis Intelligence
-        Index, a mix of many benchmarks.</li>
-      <li><strong>Coding (SciCode)</strong> — the SciCode benchmark score,
-        scaled from 0 to 100. This project uses SciCode because the models
-        feed no longer supplies the former Coding Index. The scores are not
-        comparable to that index. Only models with SciCode scores appear.</li>
-      <li><strong>Math (AIME 2025)</strong> — the score on the AIME 2025 math
-        contest, from 0 to 100. Artificial Analysis removed its old Math Index,
-        so this contest score is the stand-in. Only some models have it, so
-        this view shows fewer points.</li>
-      <li><strong>Terminal-Bench v4.0</strong> — the
-        <a href="https://artificialanalysis.ai/evaluations/terminalbench-v4-0">terminal task benchmark</a>
-        score, scaled from 0 to 100. Only models with scores appear. The cost
-        axis and response time filter still use the existing Intelligence Index
-        task costs and response-time measurements, not Terminal-Bench task
-        costs or durations.</li>
-      <li><strong>LiveBench Coding and Agentic Coding</strong> use the
-        <a href="https://livebench.ai/">official LiveBench</a> release 2026_06_25,
-        on a 0–100 scale. Coding averages code generation and completion;
-        Agentic Coding averages JavaScript, TypeScript, and Python evaluations.
-        Missing subtasks are skipped; score details show how many were completed.
-        Only reviewed model-and-effort matches appear. The cost axis uses AA
-        Intelligence Index task costs with the selected subscription adjustment,
-        and the time filter uses AA response times, not LiveBench costs or durations.</li>
-    </ul>
-    <p>The blue line is the Pareto line. A model is on this line when no other
-      shown model is both smarter and cheaper. These models give you the best
-      value for money.</p>
-    <h2>The response time filter</h2>
-    <p>Reasoning models can think for a long time before they answer. The
-      "Max response time" slider hides slow models. The value is the median
-      end-to-end response time in seconds. This is the total time from the
-      request to the last token of a 500-token answer. When you move the
-      slider, the Pareto line is computed again from the models that remain.</p>
-    <p>Point at a model to see its details. Use the Tab key to step through the
-      models with the keyboard.</p>
-  </section>
+  The above copyright notice and this permission notice shall be included in all
+  copies or substantial portions of the Software.
 
-  <footer id="footer">
-    Data: <a href="https://artificialanalysis.ai/">artificialanalysis.ai</a> provider leaderboard,
-    extracted with <code>artificialanalysis.ai-parser.py</code>.
-    Models without intelligence, cost, or speed data are not shown.
-  </footer>
-</main>
+  THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+  IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+  FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+  AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+  LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+  OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+  SOFTWARE.
+
+  The Xiaomi mark is from Simple Icons (https://simpleicons.org/), CC0 1.0.
+  All marks are trademarks of their owners. Mono marks use currentColor.
+-->
+<svg class="logo-sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+<defs><linearGradient id="logo-meta-g0" x1="75.897%" x2="26.312%" y1="89.199%" y2="12.194%"><stop offset=".06%" stop-color="#0867DF"/><stop offset="45.39%" stop-color="#0668E1"/><stop offset="85.91%" stop-color="#0064E0"/></linearGradient><linearGradient id="logo-meta-g1" x1="21.67%" x2="97.068%" y1="75.874%" y2="23.985%"><stop offset="13.23%" stop-color="#0064DF"/><stop offset="99.88%" stop-color="#0064E0"/></linearGradient><linearGradient id="logo-meta-g2" x1="38.263%" x2="60.895%" y1="89.127%" y2="16.131%"><stop offset="1.47%" stop-color="#0072EC"/><stop offset="68.81%" stop-color="#0064DF"/></linearGradient><linearGradient id="logo-meta-g3" x1="47.032%" x2="52.15%" y1="90.19%" y2="15.745%"><stop offset="7.31%" stop-color="#007CF6"/><stop offset="99.43%" stop-color="#0072EC"/></linearGradient><linearGradient id="logo-meta-g4" x1="52.155%" x2="47.591%" y1="58.301%" y2="37.004%"><stop offset="7.31%" stop-color="#007FF9"/><stop offset="100%" stop-color="#007CF6"/></linearGradient><linearGradient id="logo-meta-g5" x1="37.689%" x2="61.961%" y1="12.502%" y2="63.624%"><stop offset="7.31%" stop-color="#007FF9"/><stop offset="100%" stop-color="#0082FB"/></linearGradient><linearGradient id="logo-meta-g6" x1="34.808%" x2="62.313%" y1="68.859%" y2="23.174%"><stop offset="27.99%" stop-color="#007FF8"/><stop offset="91.41%" stop-color="#0082FB"/></linearGradient><linearGradient id="logo-meta-g7" x1="43.762%" x2="57.602%" y1="6.235%" y2="98.514%"><stop offset="0%" stop-color="#0082FB"/><stop offset="99.95%" stop-color="#0081FA"/></linearGradient><linearGradient id="logo-meta-g8" x1="60.055%" x2="39.88%" y1="4.661%" y2="69.077%"><stop offset="6.19%" stop-color="#0081FA"/><stop offset="100%" stop-color="#0080F9"/></linearGradient><linearGradient id="logo-meta-g9" x1="30.282%" x2="61.081%" y1="59.32%" y2="33.244%"><stop offset="0%" stop-color="#027AF3"/><stop offset="100%" stop-color="#0080F9"/></linearGradient><linearGradient id="logo-meta-g10" x1="20.433%" x2="82.112%" y1="50.001%" y2="50.001%"><stop offset="0%" stop-color="#0377EF"/><stop offset="99.94%" stop-color="#0279F1"/></linearGradient><linearGradient id="logo-meta-g11" x1="40.303%" x2="72.394%" y1="35.298%" y2="57.811%"><stop offset=".19%" stop-color="#0471E9"/><stop offset="100%" stop-color="#0377EF"/></linearGradient><linearGradient id="logo-meta-g12" x1="32.254%" x2="68.003%" y1="19.719%" y2="84.908%"><stop offset="27.65%" stop-color="#0867DF"/><stop offset="100%" stop-color="#0471E9"/></linearGradient></defs>
+<symbol id="logo-openai" viewBox="0 0 24 24"><g fill="currentColor" fill-rule="evenodd"><path d="M9.205 8.658v-2.26c0-.19.072-.333.238-.428l4.543-2.616c.619-.357 1.356-.523 2.117-.523 2.854 0 4.662 2.212 4.662 4.566 0 .167 0 .357-.024.547l-4.71-2.759a.797.797 0 00-.856 0l-5.97 3.473zm10.609 8.8V12.06c0-.333-.143-.57-.429-.737l-5.97-3.473 1.95-1.118a.433.433 0 01.476 0l4.543 2.617c1.309.76 2.189 2.378 2.189 3.948 0 1.808-1.07 3.473-2.76 4.163zM7.802 12.703l-1.95-1.142c-.167-.095-.239-.238-.239-.428V5.899c0-2.545 1.95-4.472 4.591-4.472 1 0 1.927.333 2.712.928L8.23 5.067c-.285.166-.428.404-.428.737v6.898zM12 15.128l-2.795-1.57v-3.33L12 8.658l2.795 1.57v3.33L12 15.128zm1.796 7.23c-1 0-1.927-.332-2.712-.927l4.686-2.712c.285-.166.428-.404.428-.737v-6.898l1.974 1.142c.167.095.238.238.238.428v5.233c0 2.545-1.974 4.472-4.614 4.472zm-5.637-5.303l-4.544-2.617c-1.308-.761-2.188-2.378-2.188-3.948A4.482 4.482 0 014.21 6.327v5.423c0 .333.143.571.428.738l5.947 3.449-1.95 1.118a.432.432 0 01-.476 0zm-.262 3.9c-2.688 0-4.662-2.021-4.662-4.519 0-.19.024-.38.047-.57l4.686 2.71c.286.167.571.167.856 0l5.97-3.448v2.26c0 .19-.07.333-.237.428l-4.543 2.616c-.619.357-1.356.523-2.117.523zm5.899 2.83a5.947 5.947 0 005.827-4.756C22.287 18.339 24 15.84 24 13.296c0-1.665-.713-3.282-1.998-4.448.119-.5.19-.999.19-1.498 0-3.401-2.759-5.947-5.946-5.947-.642 0-1.26.095-1.88.31A5.962 5.962 0 0010.205 0a5.947 5.947 0 00-5.827 4.757C1.713 5.447 0 7.945 0 10.49c0 1.666.713 3.283 1.998 4.448-.119.5-.19 1-.19 1.499 0 3.401 2.759 5.946 5.946 5.946.642 0 1.26-.095 1.88-.309a5.96 5.96 0 004.162 1.713z"/></g></symbol>
+<symbol id="logo-anthropic" viewBox="0 0 24 24"><g fill="currentColor" fill-rule="evenodd"><path d="M13.827 3.52h3.603L24 20h-3.603l-6.57-16.48zm-7.258 0h3.767L16.906 20h-3.674l-1.343-3.461H5.017l-1.344 3.46H0L6.57 3.522zm4.132 9.959L8.453 7.687 6.205 13.48H10.7z"/></g></symbol>
+<symbol id="logo-google" viewBox="0 0 24 24"><path d="M23 12.245c0-.905-.075-1.565-.236-2.25h-10.54v4.083h6.186c-.124 1.014-.797 2.542-2.294 3.569l-.021.136 3.332 2.53.23.022C21.779 18.417 23 15.593 23 12.245z" fill="#4285F4"/><path d="M12.225 23c3.03 0 5.574-.978 7.433-2.665l-3.542-2.688c-.948.648-2.22 1.1-3.891 1.1a6.745 6.745 0 01-6.386-4.572l-.132.011-3.465 2.628-.045.124C4.043 20.531 7.835 23 12.225 23z" fill="#34A853"/><path d="M5.84 14.175A6.65 6.65 0 015.463 12c0-.758.138-1.491.361-2.175l-.006-.147-3.508-2.67-.115.054A10.831 10.831 0 001 12c0 1.772.436 3.447 1.197 4.938l3.642-2.763z" fill="#FBBC05"/><path d="M12.225 5.253c2.108 0 3.529.892 4.34 1.638l3.167-3.031C17.787 2.088 15.255 1 12.225 1 7.834 1 4.043 3.469 2.197 7.062l3.63 2.763a6.77 6.77 0 016.398-4.572z" fill="#EB4335"/></symbol>
+<symbol id="logo-xai" viewBox="0 0 24 24"><g fill="currentColor" fill-rule="evenodd"><path d="M6.469 8.776L16.512 23h-4.464L2.005 8.776H6.47zm-.004 7.9l2.233 3.164L6.467 23H2l4.465-6.324zM22 2.582V23h-3.659V7.764L22 2.582zM22 1l-9.952 14.095-2.233-3.163L17.533 1H22z"/></g></symbol>
+<symbol id="logo-meta" viewBox="0 0 24 24"><path d="M6.897 4h-.024l-.031 2.615h.022c1.715 0 3.046 1.357 5.94 6.246l.175.297.012.02 1.62-2.438-.012-.019a48.763 48.763 0 00-1.098-1.716 28.01 28.01 0 00-1.175-1.629C10.413 4.932 8.812 4 6.896 4z" fill="url(#logo-meta-g0)"/><path d="M6.873 4C4.95 4.01 3.247 5.258 2.02 7.17a4.352 4.352 0 00-.01.017l2.254 1.231.011-.017c.718-1.083 1.61-1.774 2.568-1.785h.021L6.896 4h-.023z" fill="url(#logo-meta-g1)"/><path d="M2.019 7.17l-.011.017C1.2 8.447.598 9.995.274 11.664l-.005.022 2.534.6.004-.022c.27-1.467.786-2.828 1.456-3.845l.011-.017L2.02 7.17z" fill="url(#logo-meta-g2)"/><path d="M2.807 12.264l-2.533-.6-.005.022c-.177.918-.267 1.851-.269 2.786v.023l2.598.233v-.023a12.591 12.591 0 01.21-2.44z" fill="url(#logo-meta-g3)"/><path d="M2.677 15.537a5.462 5.462 0 01-.079-.813v-.022L0 14.468v.024a8.89 8.89 0 00.146 1.652l2.535-.585a4.106 4.106 0 01-.004-.022z" fill="url(#logo-meta-g4)"/><path d="M3.27 16.89c-.284-.31-.484-.756-.589-1.328l-.004-.021-2.535.585.004.021c.192 1.01.568 1.85 1.106 2.487l.014.017 2.018-1.745a2.106 2.106 0 01-.015-.016z" fill="url(#logo-meta-g5)"/><path d="M10.78 9.654c-1.528 2.35-2.454 3.825-2.454 3.825-2.035 3.2-2.739 3.917-3.871 3.917a1.545 1.545 0 01-1.186-.508l-2.017 1.744.014.017C2.01 19.518 3.058 20 4.356 20c1.963 0 3.374-.928 5.884-5.33l1.766-3.13a41.283 41.283 0 00-1.227-1.886z" fill="#0082FB"/><path d="M13.502 5.946l-.016.016c-.4.43-.786.908-1.16 1.416.378.483.768 1.024 1.175 1.63.48-.743.928-1.345 1.367-1.807l.016-.016-1.382-1.24z" fill="url(#logo-meta-g6)"/><path d="M20.918 5.713C19.853 4.633 18.583 4 17.225 4c-1.432 0-2.637.787-3.723 1.944l-.016.016 1.382 1.24.016-.017c.715-.747 1.408-1.12 2.176-1.12.826 0 1.6.39 2.27 1.075l.015.016 1.589-1.425-.016-.016z" fill="#0082FB"/><path d="M23.998 14.125c-.06-3.467-1.27-6.566-3.064-8.396l-.016-.016-1.588 1.424.015.016c1.35 1.392 2.277 3.98 2.361 6.971v.023h2.292v-.022z" fill="url(#logo-meta-g7)"/><path d="M23.998 14.15v-.023h-2.292v.022c.004.14.006.282.006.424 0 .815-.121 1.474-.368 1.95l-.011.022 1.708 1.782.013-.02c.62-.96.946-2.293.946-3.91 0-.083 0-.165-.002-.247z" fill="url(#logo-meta-g8)"/><path d="M21.344 16.52l-.011.02c-.214.402-.519.67-.917.787l.778 2.462a3.493 3.493 0 00.438-.182 3.558 3.558 0 001.366-1.218l.044-.065.012-.02-1.71-1.784z" fill="url(#logo-meta-g9)"/><path d="M19.92 17.393c-.262 0-.492-.039-.718-.14l-.798 2.522c.449.153.927.222 1.46.222.492 0 .943-.073 1.352-.215l-.78-2.462c-.167.05-.341.075-.517.073z" fill="url(#logo-meta-g10)"/><path d="M18.323 16.534l-.014-.017-1.836 1.914.016.017c.637.682 1.246 1.105 1.937 1.337l.797-2.52c-.291-.125-.573-.353-.9-.731z" fill="url(#logo-meta-g11)"/><path d="M18.309 16.515c-.55-.642-1.232-1.712-2.303-3.44l-1.396-2.336-.011-.02-1.62 2.438.012.02.989 1.668c.959 1.61 1.74 2.774 2.493 3.585l.016.016 1.834-1.914a2.353 2.353 0 01-.014-.017z" fill="url(#logo-meta-g12)"/></symbol>
+<symbol id="logo-kimi" viewBox="0 0 24 24"><g fill="currentColor" fill-rule="evenodd"><path d="M21.846 0a1.923 1.923 0 110 3.846H20.15a.226.226 0 01-.227-.226V1.923C19.923.861 20.784 0 21.846 0z"/><path d="M11.065 11.199l7.257-7.2c.137-.136.06-.41-.116-.41H14.3a.164.164 0 00-.117.051l-7.82 7.756c-.122.12-.302.013-.302-.179V3.82c0-.127-.083-.23-.185-.23H3.186c-.103 0-.186.103-.186.23V19.77c0 .128.083.23.186.23h2.69c.103 0 .186-.102.186-.23v-3.25c0-.069.025-.135.069-.178l2.424-2.406a.158.158 0 01.205-.023l6.484 4.772a7.677 7.677 0 003.453 1.283c.108.012.2-.095.2-.23v-3.06c0-.117-.07-.212-.164-.227a5.028 5.028 0 01-2.027-.807l-5.613-4.064c-.117-.078-.132-.279-.028-.381z"/></g></symbol>
+<symbol id="logo-zai" viewBox="0 0 24 24"><g fill="currentColor" fill-rule="evenodd"><path d="M12.105 2L9.927 4.953H.653L2.83 2h9.276zM23.254 19.048L21.078 22h-9.242l2.174-2.952h9.244zM24 2L9.264 22H0L14.736 2H24z"/></g></symbol>
+<symbol id="logo-deepseek" viewBox="0 0 24 24"><path d="M23.748 4.482c-.254-.124-.364.113-.512.234-.051.039-.094.09-.137.136-.372.397-.806.657-1.373.626-.829-.046-1.537.214-2.163.848-.133-.782-.575-1.248-1.247-1.548-.352-.156-.708-.311-.955-.65-.172-.241-.219-.51-.305-.774-.055-.16-.11-.323-.293-.35-.2-.031-.278.136-.356.276-.313.572-.434 1.202-.422 1.84.027 1.436.633 2.58 1.838 3.393.137.093.172.187.129.323-.082.28-.18.552-.266.833-.055.179-.137.217-.329.14a5.526 5.526 0 01-1.736-1.18c-.857-.828-1.631-1.742-2.597-2.458a11.365 11.365 0 00-.689-.471c-.985-.957.13-1.743.388-1.836.27-.098.093-.432-.779-.428-.872.004-1.67.295-2.687.684a3.055 3.055 0 01-.465.137 9.597 9.597 0 00-2.883-.102c-1.885.21-3.39 1.102-4.497 2.623C.082 8.606-.231 10.684.152 12.85c.403 2.284 1.569 4.175 3.36 5.653 1.858 1.533 3.997 2.284 6.438 2.14 1.482-.085 3.133-.284 4.994-1.86.47.234.962.327 1.78.397.63.059 1.236-.03 1.705-.128.735-.156.684-.837.419-.961-2.155-1.004-1.682-.595-2.113-.926 1.096-1.296 2.746-2.642 3.392-7.003.05-.347.007-.565 0-.845-.004-.17.035-.237.23-.256a4.173 4.173 0 001.545-.475c1.396-.763 1.96-2.015 2.093-3.517.02-.23-.004-.467-.247-.588zM11.581 18c-2.089-1.642-3.102-2.183-3.52-2.16-.392.024-.321.471-.235.763.09.288.207.486.371.739.114.167.192.416-.113.603-.673.416-1.842-.14-1.897-.167-1.361-.802-2.5-1.86-3.301-3.307-.774-1.393-1.224-2.887-1.298-4.482-.02-.386.093-.522.477-.592a4.696 4.696 0 011.529-.039c2.132.312 3.946 1.265 5.468 2.774.868.86 1.525 1.887 2.202 2.891.72 1.066 1.494 2.082 2.48 2.914.348.292.625.514.891.677-.802.09-2.14.11-3.054-.614zm1-6.44a.306.306 0 01.415-.287.302.302 0 01.2.288.306.306 0 01-.31.307.303.303 0 01-.304-.308zm3.11 1.596c-.2.081-.399.151-.59.16a1.245 1.245 0 01-.798-.254c-.274-.23-.47-.358-.552-.758a1.73 1.73 0 01.016-.588c.07-.327-.008-.537-.239-.727-.187-.156-.426-.199-.688-.199a.559.559 0 01-.254-.078c-.11-.054-.2-.19-.114-.358.028-.054.16-.186.192-.21.356-.202.767-.136 1.146.016.352.144.618.408 1.001.782.391.451.462.576.685.914.176.265.336.537.445.848.067.195-.019.354-.25.452z" fill="#4D6BFE"/></symbol>
+<symbol id="logo-xiaomi" viewBox="0 0 24 24"><g fill="#ff6900"><path d="M12 0C8.016 0 4.756.255 2.493 2.516.23 4.776 0 8.033 0 12.012c0 3.98.23 7.235 2.494 9.497C4.757 23.77 8.017 24 12 24c3.983 0 7.243-.23 9.506-2.491C23.77 19.247 24 15.99 24 12.012c0-3.984-.233-7.243-2.502-9.504C19.234.252 15.978 0 12 0zM4.906 7.405h5.624c1.47 0 3.007.068 3.764.827.746.746.827 2.233.83 3.676v4.54a.15.15 0 0 1-.152.147h-1.947a.15.15 0 0 1-.152-.148V11.83c-.002-.806-.048-1.634-.464-2.051-.358-.36-1.026-.441-1.72-.458H7.158a.15.15 0 0 0-.151.147v6.98a.15.15 0 0 1-.152.148H4.906a.15.15 0 0 1-.15-.148V7.554a.15.15 0 0 1 .15-.149zm12.131 0h1.949a.15.15 0 0 1 .15.15v8.892a.15.15 0 0 1-.15.148h-1.949a.15.15 0 0 1-.151-.148V7.554a.15.15 0 0 1 .151-.149zM8.92 10.948h2.046c.083 0 .15.066.15.147v5.352a.15.15 0 0 1-.15.148H8.92a.15.15 0 0 1-.152-.148v-5.352a.15.15 0 0 1 .152-.147Z"/></g></symbol>
+</svg>
 
 <script>
 "use strict";
 
-/* ---------- theme toggle ---------- */
-document.getElementById("theme-toggle").addEventListener("click", () => {
-  const root = document.documentElement;
-  const dark = getComputedStyle(document.body).colorScheme.includes("dark");
-  root.dataset.theme = dark ? "light" : "dark";
-});
+/* =========================================================================
+ * Configuration
+ * ========================================================================= */
+const CONFIG = {
+  // Y axis benchmarks. `id` is both the models.json key and the URL value.
+  metrics: [
+    { id: "intelligence_index", tab: "Intelligence",
+      title: "Cost vs intelligence", axis: "Intelligence index" },
+    { id: "coding_index", tab: "Coding (SciCode)",
+      title: "Cost vs SciCode", axis: "SciCode score" },
+    { id: "math_index", tab: "Math (AIME 2025)",
+      title: "Cost vs AIME 2025", axis: "AIME 2025 score" },
+    { id: "terminalbench_v4_0", tab: "Terminal-Bench v4.0",
+      title: "Cost vs Terminal-Bench v4.0", axis: "Terminal-Bench v4.0 score" },
+    { id: "livebench_coding", tab: "LiveBench Coding",
+      title: "Cost vs LiveBench Coding", axis: "LiveBench Coding score", livebench: true },
+    { id: "livebench_agentic_coding", tab: "LiveBench Agentic Coding",
+      title: "Cost vs LiveBench Agentic Coding", axis: "LiveBench Agentic Coding score", livebench: true },
+  ],
 
-/* ---------- state ---------- */
-// The Y axis can show one of six scores.
-const METRICS = {
-  intelligence_index: { name: "intelligence score", axis: "Artificial Analysis Intelligence Index" },
-  coding_index: { name: "SciCode score", axis: "Coding (SciCode, 0–100)" },
-  math_index: { name: "math score", axis: "AIME 2025 math contest score (0–100)" },
-  terminalbench_v4_0: { name: "Terminal-Bench v4.0 score", axis: "Terminal-Bench v4.0 (0–100)" },
-  livebench_coding: { name: "LiveBench Coding score", axis: "LiveBench Coding (0–100)" },
-  livebench_agentic_coding: { name: "LiveBench Agentic Coding score", axis: "LiveBench Agentic Coding (0–100)" },
+  // Subscription plans. The estimate assumes the allowance is fully used over a long
+  // window: effective cost = API cost × monthlyFee / apiValue.
+  plans: [
+    { key: "claude", label: "Claude plan", urlKey: "claude_plan", lab: "anthropic", closedOnly: false,
+      options: [
+        { id: "claude-api", name: "API", fullName: "Claude API", monthlyFee: 0, apiValue: 0 },
+        { id: "claude-max-5x", name: "Max 5x", fullName: "Claude Max 5x", monthlyFee: 100, apiValue: 500 },
+        { id: "claude-max-20x", name: "Max 20x", fullName: "Claude Max 20x", monthlyFee: 200, apiValue: 4000 },
+      ] },
+    { key: "codex", label: "Codex plan", urlKey: "codex_plan", lab: "openai", closedOnly: true,
+      options: [
+        { id: "chatgpt-api", name: "API", fullName: "ChatGPT API", monthlyFee: 0, apiValue: 0 },
+        { id: "chatgpt-plus", name: "Plus", fullName: "ChatGPT Plus", monthlyFee: 20, apiValue: 100 },
+        { id: "chatgpt-pro", name: "Pro", fullName: "ChatGPT Pro", monthlyFee: 200, apiValue: 4000 },
+      ] },
+  ],
+
+  // Reasoning effort levels, as AA names them.
+  efforts: {
+    none: { label: "Non-reasoning", order: 0 },
+    minimal: { label: "minimal", order: 10 },
+    low: { label: "low", order: 20 },
+    medium: { label: "medium", order: 30 },
+    default: { label: "Default", order: 35 },
+    high: { label: "high", order: 40 },
+    xhigh: { label: "xhigh", order: 50 },
+    max: { label: "max", order: 60 },
+  },
+
+  // Curated lists and colours (light, dark), after slopalytics.com.
+  frontierTiers: ["Small", "Medium", "Large"],
+  frontier: {
+    "gpt-6-astra": { tier: "Large", light: "#303840", dark: "#f1f3f5" },
+    "gpt-6-1-sol": { tier: "Medium", light: "#586878", dark: "#c5cbd3" },
+    "gpt-6-luna": { tier: "Small", light: "#748292", dark: "#939daa" },
+    "claude-opus-5-5": { tier: "Large", light: "#ae5235", dark: "#df9477" },
+    "claude-fable-5-1": { tier: "Large", light: "#903e2b", dark: "#cc785c" },
+    "claude-sonnet-5-5": { tier: "Medium", light: "#bd6948", dark: "#f0b99f" },
+    "claude-haiku-5-5": { tier: "Small", light: "#c4805f", dark: "#b98a74" },
+    "gemini-4-argon": { tier: "Large", light: "#218347", dark: "#56ca80" },
+    "gemini-3-8-flash": { tier: "Medium", light: "#247a3c", dark: "#34a853" },
+    "grok-4-7": { tier: "Large", light: "#6d55bd", dark: "#9b94ee" },
+  },
+  notable: {
+    "mimo-v2-6-pro": { light: "#b85212", dark: "#ff8b45" },
+    "muse-spark-1-3": { light: "#236bbd", dark: "#5ea4ff" },
+    "kimi-k3": { light: "#ab3f83", dark: "#ee86c4" },
+    "glm-5-3": { light: "#8e7318", dark: "#ecd36e" },
+    "glm-5-3-flash": { light: "#7c6b2e", dark: "#b9a453" },
+    "deepseek-v4-pro": { light: "#157d83", dark: "#52cdd2" },
+    "deepseek-v4-1-flash": { light: "#216b70", dark: "#33979c" },
+  },
+  // Key order is the lab sort order. `logo` names a symbol in the logo sprite.
+  labs: {
+    openai: { name: "OpenAI", light: "#303840", dark: "#f1f3f5", logo: true },
+    anthropic: { name: "Anthropic", light: "#ae5235", dark: "#df9477", logo: true },
+    google: { name: "Google", light: "#218347", dark: "#56ca80", logo: true },
+    xai: { name: "xAI", light: "#6d55bd", dark: "#9b94ee", logo: true },
+    meta: { name: "Meta", light: "#236bbd", dark: "#5ea4ff", logo: true },
+    kimi: { name: "Kimi", light: "#ab3f83", dark: "#ee86c4", logo: true },
+    zai: { name: "Z AI", light: "#8e7318", dark: "#ecd36e", logo: true },
+    deepseek: { name: "DeepSeek", light: "#157d83", dark: "#52cdd2", logo: true },
+    xiaomi: { name: "Xiaomi", light: "#b85212", dark: "#ff8b45", logo: true },
+  },
+  fallbackColor: { light: "#637082", dark: "#a4adb9" },
+  forceDeprecated: ["gemini-3-5-flash-lite"],
+
+  defaults: {
+    metric: "intelligence_index",
+    // Every Frontier family except the two Medium-tier extras.
+    selected: ["gpt-6-astra", "gpt-6-1-sol", "gpt-6-luna", "claude-opus-5-5",
+      "claude-fable-5-1", "claude-haiku-5-5", "gemini-4-argon", "grok-4-7"],
+    excluded: ["none"],
+    frontier: true,
+    linear: false,
+    labels: true,
+    plans: { claude: "claude-api", codex: "chatgpt-api" },
+    maxTime: Infinity,
+    deprecated: false,
+  },
+
+  sliderSteps: 200,
+  minChartPoints: 3,
+
+  layout: {
+    initialSize: { width: 1120, height: 430 },
+    top: 30,
+    labelSpacing: 24,
+    maxLabels: 16,
+    minHeight: 240,
+    desktop: { minWidth: 740, left: 64, gutter: 235, bottom: 60, xTitleOffset: 57, xTitleSize: 13 },
+    compact: { minWidth: 280, left: 40, gutter: 14, bottom: 46, xTitleOffset: 40, xTitleSize: 12 },
+  },
 };
 
-// Estimates assume the subscription allowance is fully drained over a long window.
-const PLANS = [
-  { id: "claude-api", name: "Claude API", provider: "Anthropic", monthlyFee: 0, drainedApiValue: 0, multiplier: 1 },
-  { id: "claude-max-5x", name: "Claude Max 5x", provider: "Anthropic", monthlyFee: 100, drainedApiValue: 500, multiplier: 1 / 5 },
-  { id: "claude-max-20x", name: "Claude Max 20x", provider: "Anthropic", monthlyFee: 200, drainedApiValue: 4000, multiplier: 1 / 20 },
-  { id: "chatgpt-api", name: "ChatGPT API", provider: "OpenAI", monthlyFee: 0, drainedApiValue: 0, multiplier: 1 },
-  { id: "chatgpt-plus", name: "ChatGPT Plus", provider: "OpenAI", monthlyFee: 20, drainedApiValue: 100, multiplier: 1 / 5 },
-  { id: "chatgpt-pro", name: "ChatGPT Pro", provider: "OpenAI", monthlyFee: 200, drainedApiValue: 4000, multiplier: 1 / 20 },
-];
+/* =========================================================================
+ * Pure helpers: formatters, data, scales, ticks, Pareto, labels, URL codec.
+ * Nothing here touches the DOM.
+ * ========================================================================= */
+const metricById = (id) => CONFIG.metrics.find((m) => m.id === id) || CONFIG.metrics[0];
+const numberOrNull = (v) => (typeof v === "number" && Number.isFinite(v) ? v : null);
+const round2 = (n) => Math.round(n * 100) / 100;
+const clean = (n) => Number(n.toPrecision(12));  // drops float noise such as 0.6000000000000001
 
-const state = {
-  models: [],        // all models that have cost, response time, and a score
-  metric: "intelligence_index",  // the key of the score on the Y axis
-  plans: { claude: PLANS[0], codex: PLANS[3] },
-  maxE2e: Infinity,  // filter: maximum end-to-end response time in seconds
-  showDeprecated: false,
-  paretoYZoom: false,
-  logMin: 1, logMax: 300,  // slider range, from the data
-  selectedModels: new Set(),
-};
-
-const FILTER_PARAMS = {
-  metric: "metric", maxE2e: "max_response_time",
-  claudePlan: "claude_plan", codexPlan: "codex_plan", models: "models",
-};
-const urlParams = new URLSearchParams(location.search);
-const urlMetric = urlParams.get(FILTER_PARAMS.metric);
-const urlMaxE2e = Number(urlParams.get(FILTER_PARAMS.maxE2e));
-const planFor = (provider, id, fallback) =>
-  PLANS.find((p) => p.provider === provider && p.id === id) || fallback;
-state.plans.claude = planFor("Anthropic", urlParams.get(FILTER_PARAMS.claudePlan), PLANS[0]);
-state.plans.codex = planFor("OpenAI", urlParams.get(FILTER_PARAMS.codexPlan), PLANS[3]);
-if (Object.hasOwn(METRICS, urlMetric)) state.metric = urlMetric;
-if (isFinite(urlMaxE2e) && urlMaxE2e > 0) state.maxE2e = urlMaxE2e;
-
-const fmt$ = (v) => v >= 1 ? "$" + v.toFixed(2) : "$" + Number(v.toPrecision(2));
-const fmtS = (v) => v == null ? "—" : v.toFixed(v < 10 ? 1 : 0) + " s";
-const fmtScore = (v) => v == null ? "—" : v.toFixed(1);
-const planForModel = (m) => m.provider === "Anthropic" ? state.plans.claude :
-  m.provider === "OpenAI" ? state.plans.codex : null;
-const effectiveCost = (m) => m.cost_per_task * (planForModel(m)?.multiplier || 1);
-const costLabel = (m) => planForModel(m)?.name || "API";
-const planSelects = [
-  ["claude-plan-select", "Anthropic", "claude"],
-  ["codex-plan-select", "OpenAI", "codex"],
-];
-for (const [id, provider, key] of planSelects) {
-  const select = document.getElementById(id);
-  select.innerHTML = PLANS.filter((p) => p.provider === provider)
-    .map((p) => `<option value="${p.id}">${p.name}</option>`).join("");
-  select.value = state.plans[key].id;
-  select.addEventListener("change", () => {
-    state.plans[key] = planFor(provider, select.value, state.plans[key]);
-    syncUrl();
-    render();
-  });
+function esc(s) {
+  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-/* ---------- load data ---------- */
-fetch("models.json")
-  .then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
-  .then((all) => {
-    state.models = all.filter((m) =>
-      m.cost_per_task != null &&
-      Object.keys(METRICS).some((k) => m[k] != null));
-    buildModelFilters();
-    const times = state.models.map((m) => m.e2e_response_time_s).filter((v) => v != null);
-    state.logMin = Math.max(1, Math.floor(Math.min(...times)));
-    state.logMax = Math.ceil(Math.max(...times));
-    document.getElementById("e2e-number").min = state.logMin;
-    document.querySelector(`input[name="metric"][value="${state.metric}"]`).checked = true;
-    slider.value = secondsToSlider(state.maxE2e);
-    numBox.value = isFinite(state.maxE2e) ? state.maxE2e : "";
-    syncUrl();
-    render();
-  })
-  .catch((err) => {
-    document.getElementById("status").textContent =
-      "Could not load models.json (" + err.message + "). " +
-      "Start a local web server in this folder, for example: python3 -m http.server. " +
-      "Then open this page through http://, not file://.";
+/** Dollars. Below $0.01 two significant digits; `short` is for axis ticks. */
+function fmtCost(v, short = false) {
+  if (v == null || !Number.isFinite(v)) return "—";
+  if (short && v >= 1000) return "$" + (v / 1000).toFixed(1).replace(/\.0$/, "") + "k";
+  if (v > 0 && v < 0.01) return "$" + String(Number(v.toPrecision(2)));
+  return "$" + v.toLocaleString("en-US", {
+    maximumFractionDigits: v < 1 ? 3 : 2,
+    minimumFractionDigits: short ? 0 : 2,
   });
+}
+function fmtScore(v) {
+  return v == null ? "—" : v.toLocaleString("en-US", { maximumFractionDigits: 1 });
+}
+function fmtSeconds(v) {
+  return v == null ? "—" : v.toFixed(v < 10 ? 1 : 0) + " s";
+}
+function fmtSpeed(v) {
+  return v == null ? "—" : Math.round(v) + " tok/s";
+}
+/** Ratio a ÷ b, e.g. "0.545×". */
+function fmtMult(a, b) {
+  if (a == null || b == null || b === 0) return "—";
+  return (a / b).toLocaleString("en-US", { maximumSignificantDigits: 3 }) + "×";
+}
+const shortName = (name) => name.replace("Claude ", "");
+const effortText = (v) => (v.effort === "none" ? "none" : v.effortLabel.toLowerCase());
 
-/* ---------- filter controls ---------- */
-const slider = document.getElementById("e2e-slider");
-const numBox = document.getElementById("e2e-number");
-const modelFilters = document.getElementById("model-filters");
-const modelPickerToggle = document.getElementById("model-picker-toggle");
-const modelPicker = document.getElementById("model-picker");
-const modelGroupsEl = document.getElementById("model-groups");
-const modelSearch = document.getElementById("model-search");
-const baseModelName = (m) => m.name.replace(/\s+\([^)]*\)$/, "");
-const modelKey = (provider, name) => provider + "::" + name;
-const modelGroups = new Map();  // provider -> sorted base model names
-const openProviders = new Set();  // groups expanded by the user
+function slugify(s) {
+  return String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
+function compareText(a, b) {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
 
-function buildModelFilters() {
-  const names = new Map();
-  for (const m of state.models) {
-    const name = baseModelName(m);
-    if (!names.has(m.provider)) names.set(m.provider, new Set());
-    names.get(m.provider).add(name);
-    state.selectedModels.add(modelKey(m.provider, name));
+/** Normalise models.json rows into plottable variants and their families. */
+function normalise(models) {
+  const forced = new Set(CONFIG.forceDeprecated);
+  const variants = [];
+  for (const m of models) {
+    if (!(m.cost_per_task > 0)) continue;  // no cost, or zero price: not plottable
+    const effort = CONFIG.efforts[m.effort] ? m.effort : (m.reasoning ? "default" : "none");
+    const family = m.family || m.slug;
+    const scores = {};
+    for (const metric of CONFIG.metrics) scores[metric.id] = numberOrNull(m[metric.id]);
+    variants.push({
+      id: m.slug,
+      family,
+      name: m.family_name || m.name,
+      fullName: m.name,
+      lab: m.lab || slugify(m.creator),
+      labName: m.lab_name || m.creator || "",
+      released: m.released || "",
+      effort,
+      effortLabel: CONFIG.efforts[effort].label,
+      effortOrder: numberOrNull(m.effort_order) ?? CONFIG.efforts[effort].order,
+      deprecated: !!m.deprecated || forced.has(family),
+      open: !!m.open_weights,
+      cost: m.cost_per_task,
+      time: numberOrNull(m.e2e_response_time_s),
+      speed: numberOrNull(m.output_tokens_per_second),
+      scores,
+      livebench: m.livebench || null,
+    });
   }
-  modelGroups.clear();
-  for (const provider of [...names.keys()].sort()) modelGroups.set(provider, [...names.get(provider)].sort());
-  restoreModelSelection();
-  renderModelPicker();
-}
-function modelKeys() {
-  return [...modelGroups].flatMap(([provider, names]) => names.map((name) => modelKey(provider, name)));
-}
-function restoreModelSelection() {
-  const value = urlParams.get(FILTER_PARAMS.models);
-  if (value == null) return;
-  const keys = modelKeys();
-  if (!/^[0-9a-f]*$/i.test(value) || value.length !== Math.ceil(keys.length / 4)) return;
-  state.selectedModels.clear();
-  keys.forEach((key, i) => {
-    if (parseInt(value[Math.floor(i / 4)], 16) & (1 << (i % 4))) state.selectedModels.add(key);
-  });
-}
-// Keys of a provider's models that match the search. A provider name match keeps all its models.
-function matchingKeys(provider) {
-  const query = modelSearch.value.trim().toLowerCase();
-  const all = !query || provider.toLowerCase().includes(query);
-  return modelGroups.get(provider)
-    .filter((name) => all || name.toLowerCase().includes(query))
-    .map((name) => modelKey(provider, name));
-}
-function renderModelPicker() {
-  const searching = modelSearch.value.trim() !== "";
-  let total = 0, html = "";
-  for (const provider of modelGroups.keys()) {
-    const keys = modelGroups.get(provider).map((name) => modelKey(provider, name));
-    const on = keys.filter((k) => state.selectedModels.has(k)).length;
-    total += keys.length;
-    const shown = matchingKeys(provider);
-    if (!shown.length) continue;
-    // The header checkbox acts on the shown models, so its state follows them too.
-    const shownOn = shown.filter((k) => state.selectedModels.has(k)).length;
-    const p = esc(provider);
-    html += `<details${searching || openProviders.has(provider) ? " open" : ""} data-group="${p}"><summary>` +
-      `<input type="checkbox" data-provider="${p}" aria-label="All ${p} models"` +
-      (shownOn === shown.length ? " checked" : shownOn ? " data-mixed" : "") + `> ${p}` +
-      `<span class="count">${on}/${keys.length}</span></summary>` +
-      shown.map((k) => `<label><input type="checkbox" data-key="${esc(k)}"` +
-        (state.selectedModels.has(k) ? " checked" : "") + `> ${esc(k.slice(provider.length + 2))}</label>`).join("") +
-      "</details>";
-  }
-  modelGroupsEl.innerHTML = html || '<p class="empty">No models match.</p>';
-  modelGroupsEl.querySelectorAll("input[data-mixed]").forEach((box) => { box.indeterminate = true; });
-  modelPickerToggle.textContent = `Models: ${state.selectedModels.size} of ${total} selected`;
-}
-function setModelPickerOpen(open) {
-  modelPicker.hidden = !open;
-  modelPickerToggle.setAttribute("aria-expanded", String(open));
-  if (open) modelSearch.focus();
-}
-function setModels(keys, on) {
-  for (const k of keys) on ? state.selectedModels.add(k) : state.selectedModels.delete(k);
-  syncUrl();
-  renderModelPicker();
-  render();
-}
-modelPickerToggle.addEventListener("click", (e) => {
-  e.preventDefault();
-  e.stopPropagation();
-  setModelPickerOpen(modelPicker.hidden);
-});
-document.addEventListener("click", (e) => {
-  if (!modelPicker.hidden && !modelFilters.contains(e.target)) setModelPickerOpen(false);
-});
-modelSearch.addEventListener("input", renderModelPicker);
-modelGroupsEl.addEventListener("toggle", (e) => {
-  const provider = e.target.dataset.group;
-  if (modelSearch.value.trim()) return;  // search expands every group; do not remember that
-  e.target.open ? openProviders.add(provider) : openProviders.delete(provider);
-}, true);
-modelGroupsEl.addEventListener("change", (e) => {
-  const { provider, key } = e.target.dataset;
-  setModels(key ? [key] : matchingKeys(provider), e.target.checked);
-  // Re-rendering replaced the checkbox; keep keyboard focus on its replacement.
-  const attr = key ? `data-key="${CSS.escape(key)}"` : `data-provider="${CSS.escape(provider)}"`;
-  modelGroupsEl.querySelector(`input[${attr}]`)?.focus();
-});
-document.getElementById("select-all-models").addEventListener("click", () =>
-  setModels([...modelGroups.keys()].flatMap(matchingKeys), true));
-document.getElementById("clear-models").addEventListener("click", () =>
-  setModels([...modelGroups.keys()].flatMap(matchingKeys), false));
-
-// The slider is linear in log(time). Small values get fine steps this way.
-function sliderToSeconds(v) {
-  if (+v >= +slider.max) return Infinity;
-  const t = v / slider.max;
-  return Math.exp(Math.log(state.logMin) + t * (Math.log(state.logMax) - Math.log(state.logMin)));
-}
-function secondsToSlider(s) {
-  if (!isFinite(s)) return +slider.max;
-  const t = (Math.log(s) - Math.log(state.logMin)) / (Math.log(state.logMax) - Math.log(state.logMin));
-  return Math.round(Math.min(1, Math.max(0, t)) * slider.max);
-}
-function syncUrl() {
-  const url = new URL(location.href);
-  url.searchParams.set(FILTER_PARAMS.metric, state.metric);
-  url.searchParams.set(FILTER_PARAMS.claudePlan, state.plans.claude.id);
-  url.searchParams.set(FILTER_PARAMS.codexPlan, state.plans.codex.id);
-  if (isFinite(state.maxE2e)) url.searchParams.set(FILTER_PARAMS.maxE2e, state.maxE2e);
-  else url.searchParams.delete(FILTER_PARAMS.maxE2e);
-  const keys = modelKeys();
-  if (keys.length && state.selectedModels.size !== keys.length) {
-    let value = "";
-    for (let i = 0; i < keys.length; i += 4) {
-      let nibble = 0;
-      for (let bit = 0; bit < 4 && i + bit < keys.length; bit++) {
-        if (state.selectedModels.has(keys[i + bit])) nibble |= 1 << bit;
-      }
-      value += nibble.toString(16);
+  // Slug order sets the paint order of families and points.
+  variants.sort((a, b) => compareText(a.id.toLowerCase(), b.id.toLowerCase()));
+  const families = new Map();
+  for (const v of variants) {
+    if (!families.has(v.family)) {
+      families.set(v.family, { id: v.family, name: v.name, lab: v.lab, labName: v.labName,
+        released: v.released, open: v.open, variants: [] });
     }
-    url.searchParams.set(FILTER_PARAMS.models, value);
-  } else url.searchParams.delete(FILTER_PARAMS.models);
-  history.replaceState(null, "", url);
-}
-
-slider.addEventListener("input", () => {
-  const s = sliderToSeconds(+slider.value);
-  state.maxE2e = isFinite(s) ? Math.round(s) : Infinity;
-  numBox.value = isFinite(s) ? Math.round(s) : "";
-  syncUrl();
-  render();
-});
-// Horizontal touchpad scroll nudges the max-response-time slider. A dominance
-// check keeps ordinary (mostly vertical) wheel/touchpad scrolling working.
-function nudgeMaxE2e(deltaX) {
-  const step = +(slider.step || 1);
-  const value = Math.min(+slider.max, Math.max(+slider.min, +slider.value + (deltaX > 0 ? step : -step)));
-  if (value === +slider.value) return;
-  slider.value = value;
-  slider.dispatchEvent(new Event("input", { bubbles: true }));
-}
-slider.addEventListener("wheel", (e) => {
-  if (!e.deltaX || Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
-  e.preventDefault();
-  nudgeMaxE2e(e.deltaX);
-}, { passive: false });
-numBox.addEventListener("input", () => {
-  const v = parseFloat(numBox.value);
-  state.maxE2e = v > 0 ? v : Infinity;
-  slider.value = secondsToSlider(state.maxE2e);
-  syncUrl();
-  render();
-});
-document.querySelectorAll('input[name="metric"]').forEach((r) => {
-  r.addEventListener("change", () => { state.metric = r.value; syncUrl(); render(); });
-});
-document.getElementById("show-deprecated").addEventListener("change", (e) => {
-  state.showDeprecated = e.target.checked;
-  render();
-});
-document.getElementById("pareto-y-zoom").addEventListener("change", (e) => {
-  state.paretoYZoom = e.target.checked;
-  render();
-});
-document.getElementById("table-toggle").addEventListener("click", (e) => {
-  const btn = e.currentTarget;
-  const on = btn.getAttribute("aria-pressed") !== "true";
-  btn.setAttribute("aria-pressed", on);
-  document.getElementById("table-view").hidden = !on;
-  render();
-});
-
-/* ---------- full screen chart ---------- */
-const chartCard = document.getElementById("chart-card");
-const fullscreenButton = document.getElementById("fullscreen-toggle");
-function isChartFullscreen() {
-  return document.fullscreenElement === chartCard || chartCard.classList.contains("fullscreen-fallback");
-}
-function syncChartFullscreen() {
-  const active = isChartFullscreen();
-  chartCard.classList.toggle("fullscreen-fallback", active && !document.fullscreenElement);
-  fullscreenButton.textContent = active ? "⤡" : "⤢";
-  fullscreenButton.setAttribute("aria-pressed", String(active));
-  fullscreenButton.setAttribute("aria-label", active ? "Exit chart full screen" : "Open chart in full screen");
-  fullscreenButton.title = active ? "Exit full screen" : "Open chart in full screen";
-  hideTooltip();
-  render();
-}
-function exitChartFullscreen() {
-  if (document.fullscreenElement) document.exitFullscreen();
-  else { chartCard.classList.remove("fullscreen-fallback"); syncChartFullscreen(); }
-}
-fullscreenButton.addEventListener("click", () => {
-  if (isChartFullscreen()) { exitChartFullscreen(); return; }
-  if (!chartCard.requestFullscreen) { chartCard.classList.add("fullscreen-fallback"); syncChartFullscreen(); return; }
-  chartCard.requestFullscreen().catch(() => { chartCard.classList.add("fullscreen-fallback"); syncChartFullscreen(); });
-});
-document.addEventListener("fullscreenchange", syncChartFullscreen);
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && !modelPicker.hidden) {
-    setModelPickerOpen(false);
-    modelPickerToggle.focus();
-    return;
+    families.get(v.family).variants.push(v);
   }
-  const active = document.activeElement;
-  const typing = active && (active.tagName === "INPUT" || active.tagName === "SELECT");
-  if (e.key === "Escape" && !typing && isChartFullscreen()) exitChartFullscreen();
-});
+  for (const f of families.values()) {
+    f.variants.sort((a, b) => a.effortOrder - b.effortOrder);
+    f.deprecated = f.variants[0].deprecated;
+  }
+  const times = variants.map((v) => v.time).filter((t) => t > 0);
+  const timeRange = times.length
+    ? [Math.max(1, Math.floor(Math.min(...times))), Math.ceil(Math.max(...times))]
+    : [1, 1000];
+  return { variants, families, byId: new Map(variants.map((v) => [v.id, v])),
+    efforts: new Set(variants.map((v) => v.effort)), timeRange };
+}
 
-/* ---------- Pareto line ---------- */
-// A model is on the Pareto line when no other model has both
-// a higher score and a lower cost per task.
-function paretoFront(models, metric) {
-  const sorted = [...models].sort((a, b) =>
-    effectiveCost(a) - effectiveCost(b) || b[metric] - a[metric]);
+function familyColor(family, lab, theme) {
+  const c = CONFIG.frontier[family] || CONFIG.notable[family] || CONFIG.labs[lab] || CONFIG.fallbackColor;
+  return c[theme === "light" ? "light" : "dark"];
+}
+
+/** The subscription plan that prices this variant, or null for API price. */
+function planFor(v, planIds) {
+  for (const group of CONFIG.plans) {
+    if (v.lab !== group.lab || (group.closedOnly && v.open)) continue;
+    const plan = group.options.find((o) => o.id === planIds[group.key]) || group.options[0];
+    return plan.apiValue ? plan : null;
+  }
+  return null;
+}
+function effectiveCost(v, planIds) {
+  const plan = planFor(v, planIds);
+  return plan ? v.cost * plan.monthlyFee / plan.apiValue : v.cost;
+}
+
+/** The max-response-time slider is linear in log(seconds); the last step is "no limit". */
+function sliderToSeconds(pos, steps, [lo, hi]) {
+  if (pos >= steps) return Infinity;
+  return Math.round(Math.exp(Math.log(lo) + pos / steps * (Math.log(hi) - Math.log(lo))));
+}
+function secondsToSlider(seconds, steps, [lo, hi]) {
+  if (!Number.isFinite(seconds)) return steps;
+  const t = (Math.log(seconds) - Math.log(lo)) / (Math.log(hi) - Math.log(lo));
+  return Math.min(steps - 1, Math.round(Math.min(1, Math.max(0, t)) * steps));
+}
+
+/** Chart geometry for a measured canvas size. 1 SVG unit = 1 CSS px. */
+function geometry(width, height, compact) {
+  const L = CONFIG.layout, g = compact ? L.compact : L.desktop;
+  const W = Math.max(g.minWidth, width), H = Math.max(L.minHeight, height);
+  const v = compact ? 1 : Math.min(1.15, Math.max(1, W / 1200));
+  const X0 = g.left, X1 = W - g.gutter, Y0 = H - g.bottom, Ytop = L.top;
+  const maxLabels = compact ? Infinity
+    : Math.min(L.maxLabels, Math.floor((Y0 - Ytop) / L.labelSpacing) + 1);
+  return { W, H, v, X0, X1, Y0, Ytop, maxLabels, compact,
+    xTitleY: Y0 + g.xTitleOffset, xTitleSize: g.xTitleSize * v };
+}
+
+function xDomain(values, linear) {
+  const max = Math.max(values.length ? Math.max(...values) : 1, 1e-6) * 1.08;
+  if (linear) return [0, max];
+  const positive = values.filter((x) => x > 0);
+  return [Math.max((positive.length ? Math.min(...positive) : max / 10) * 0.7, 1e-6), max];
+}
+/** Score domain. The default keeps at least 20–55; the Pareto zoom has no such floor. */
+function yDomain(values, zoom = false) {
+  if (!values.length) return [0, 100];
+  const lo = Math.min(...values), hi = Math.max(...values);
+  if (zoom) return [Math.max(0, Math.floor((lo - 2) / 5) * 5), Math.ceil((hi + 2) / 5) * 5];
+  return [Math.max(0, Math.floor((Math.min(lo, 30) - 4) / 10) * 10), Math.ceil((Math.max(hi, 50) + 2) / 5) * 5];
+}
+function linearScale([d0, d1], [r0, r1]) {
+  return (v) => r0 + (v - d0) / (d1 - d0) * (r1 - r0);
+}
+function logScale([d0, d1], [r0, r1]) {
+  return (v) => r0 + Math.log10(v / d0) / Math.log10(d1 / d0) * (r1 - r0);
+}
+
+/** Round ticks: step 1, 2, 5 or 10 × 10^k, about n of them. */
+function niceTicks(lo, hi, n = 5) {
+  const raw = (hi - lo) / n || 1;
+  const p = 10 ** Math.floor(Math.log10(raw));
+  const r = raw / p;
+  const step = (r <= 1 ? 1 : r <= 2 ? 2 : r <= 5 ? 5 : 10) * p;
+  const ticks = [];
+  for (let i = Math.ceil(clean(lo / step)); clean(i * step) <= hi; i++) ticks.push(clean(i * step));
+  return ticks;
+}
+function logTicks(min, max, compact = false) {
+  const narrow = Math.log10(max / min) < 1.5;
+  const mantissas = narrow ? (compact ? [1, 2, 5] : [1, 1.5, 2, 3, 5, 7]) : (compact ? [1, 3] : [1, 2, 5]);
+  const ticks = [];
+  for (let e = -6; e <= 4; e++) {
+    for (const m of mantissas) {
+      const t = clean(m * 10 ** e);
+      if (t >= min && t <= max) ticks.push(t);
+    }
+  }
+  return ticks;
+}
+
+/** Non-dominated rows: sorted by cost, kept when the score beats every cheaper row. */
+function paretoSet(rows) {
+  const sorted = rows.filter((r) => r.x != null && r.y != null).sort((a, b) => a.x - b.x || b.y - a.y);
   const front = [];
   let best = -Infinity;
-  for (const m of sorted) {
-    if (m[metric] > best) { front.push(m); best = m[metric]; }
+  for (const r of sorted) {
+    if (r.y > best) { front.push(r); best = r.y; }
   }
   return front;
 }
 
-/* ---------- chart ---------- */
-const svg = document.getElementById("chart");
-const tooltip = document.getElementById("tooltip");
-const filterRow = document.getElementById("filter-row");
-const status = document.getElementById("status");
-const legend = document.getElementById("legend");
-
-// Same horizontal-touchpad-scroll gesture, but over the chart itself.
-svg.addEventListener("wheel", (e) => {
-  if (!e.deltaX || Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
-  e.preventDefault();
-  nudgeMaxE2e(e.deltaX);
-}, { passive: false });
-
-function render() {
-  if (!state.models.length) return;
-
-  const metric = state.metric;
-  svg.setAttribute("aria-label", `${METRICS[metric].name} against AA Intelligence Index cost per task`);
-  const base = state.models.filter((m) =>
-    state.selectedModels.has(modelKey(m.provider, baseModelName(m))) &&
-    (state.showDeprecated || !m.deprecated));
-  const pool = base.filter((m) => m[metric] != null);
-  const noScore = base.length - pool.length;
-  const shown = pool.filter((m) => state.maxE2e === Infinity || m.e2e_response_time_s == null || m.e2e_response_time_s <= state.maxE2e);
-  const hidden = pool.filter((m) => m.e2e_response_time_s != null && m.e2e_response_time_s > state.maxE2e);
-  const front = paretoFront(shown, metric);
-  const frontSet = new Set(front);
-
-  // Status line and filter read-out.
-  document.getElementById("e2e-value").textContent =
-    isFinite(state.maxE2e) ? "≤ " + Math.round(state.maxE2e) + " s" : "No limit";
-  document.getElementById("status").textContent =
-    "The chart shows " + shown.length + " of " + pool.length + " models at " +
-    state.plans.claude.name + " + " + state.plans.codex.name + " pricing. " +
-    (hidden.length ? "The time filter hides " + hidden.length + " models. " : "") +
-    (noScore ? noScore + " models have no " + METRICS[metric].name + ". " : "") +
-    front.length + " models are on the Pareto line.";
-
-  // Use fixed ranges from the whole data set unless Pareto zoom is enabled.
-  const costs = state.models.map(effectiveCost);
-  const scores = state.models.filter((m) => m[metric] != null).map((m) => m[metric]);
-  const yScores = state.paretoYZoom && front.length ? front.map((m) => m[metric]) : scores;
-  const xMin = Math.min(...costs) * 0.8, xMax = Math.max(...costs) * 1.25;
-  const yMin = yScores.length ? Math.max(0, Math.floor((Math.min(...yScores) - 4) / 10) * 10) : 0;
-  const yMax = yScores.length ? Math.ceil((Math.max(...yScores) + 2) / 10) * 10 : 100;
-
-  const fullscreen = isChartFullscreen();
-  const W = fullscreen
-    ? Math.max(640, svg.parentElement.clientWidth - 16)
-    : Math.max(640, Math.min(1024, svg.parentElement.clientWidth - 16));
-  const H = fullscreen
-    ? Math.max(520, chartCard.clientHeight - filterRow.offsetHeight - status.offsetHeight - legend.offsetHeight - 48)
-    : 520;
-  const pad = { top: 14, right: 24, bottom: 52, left: 52 };
-  const px = (c) => pad.left + (Math.log(c) - Math.log(xMin)) / (Math.log(xMax) - Math.log(xMin)) * (W - pad.left - pad.right);
-  const py = (score) => pad.top + (yMax - score) / (yMax - yMin) * (H - pad.top - pad.bottom);
-
-  svg.setAttribute("viewBox", "0 0 " + W + " " + H);
-  const parts = [];
-
-  // Y grid + ticks.
-  for (let s = yMin; s <= yMax; s += 10) {
-    const y = py(s);
-    parts.push(`<line x1="${pad.left}" x2="${W - pad.right}" y1="${y}" y2="${y}" stroke="var(--grid)" stroke-width="1"/>`);
-    parts.push(`<text x="${pad.left - 8}" y="${y + 3.5}" text-anchor="end" font-size="11" fill="var(--text-muted)" style="font-variant-numeric:tabular-nums">${s}</text>`);
-  }
-  // X ticks on a 1-2-5 pattern (log scale).
-  for (let e = -3; e <= 3; e++) {
-    for (const b of [1, 2, 5]) {
-      const v = b * 10 ** e;
-      if (v < xMin || v > xMax) continue;
-      const x = px(v);
-      parts.push(`<line x1="${x}" x2="${x}" y1="${pad.top}" y2="${H - pad.bottom}" stroke="var(--grid)" stroke-width="1"/>`);
-      parts.push(`<text x="${x}" y="${H - pad.bottom + 18}" text-anchor="middle" font-size="11" fill="var(--text-muted)" style="font-variant-numeric:tabular-nums">${fmt$(v)}</text>`);
-    }
-  }
-  // Axis lines and titles.
-  parts.push(`<line x1="${pad.left}" x2="${W - pad.right}" y1="${H - pad.bottom}" y2="${H - pad.bottom}" stroke="var(--axis)" stroke-width="1"/>`);
-  parts.push(`<line x1="${pad.left}" x2="${pad.left}" y1="${pad.top}" y2="${H - pad.bottom}" stroke="var(--axis)" stroke-width="1"/>`);
-  parts.push(`<text x="${(pad.left + W - pad.right) / 2}" y="${H - 12}" text-anchor="middle" font-size="12" fill="var(--text-secondary)">AA Intelligence Index cost per task (USD, log scale)</text>`);
-  parts.push(`<text x="14" y="${(pad.top + H - pad.bottom) / 2}" text-anchor="middle" font-size="12" fill="var(--text-secondary)" transform="rotate(-90 14 ${(pad.top + H - pad.bottom) / 2})">${METRICS[metric].axis}</text>`);
-
-  // Models hidden by the filter: faint ghosts, no tooltip.
-  for (const m of hidden) {
-    parts.push(`<circle cx="${px(effectiveCost(m))}" cy="${py(m[metric])}" r="4" fill="var(--text-muted)" opacity="0.22"/>`);
-  }
-  // The Pareto line: a step line through the frontier points.
-  if (front.length) {
-    let d = "";
-    let prev = null;
-    for (const m of front) {
-      const x = px(effectiveCost(m)), y = py(m[metric]);
-      if (prev === null) d = `M ${x} ${y}`;
-      else d += ` L ${x} ${prev} L ${x} ${y}`;
-      prev = y;
-    }
-    parts.push(`<path d="${d}" fill="none" stroke="var(--series-1)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" opacity="0.9"/>`);
-  }
-  // Points. Pareto models in the series color, the rest in muted gray.
-  // Every point gets a 2 px ring in the surface color, and a large
-  // invisible hit circle for hover and keyboard focus.
-  shown.forEach((m, i) => {
-    const x = px(effectiveCost(m)), y = py(m[metric]);
-    const onFront = frontSet.has(m);
-    parts.push(`<circle cx="${x}" cy="${y}" r="${onFront ? 5 : 4}" fill="${onFront ? "var(--series-1)" : "var(--text-muted)"}" stroke="var(--surface-1)" stroke-width="2"/>`);
-    parts.push(`<circle cx="${x}" cy="${y}" r="12" fill="transparent" tabindex="0" role="img" data-i="${i}" aria-label="${esc(m.name)}: ${METRICS[metric].name} ${m[metric].toFixed(1)}, ${fmt$(effectiveCost(m))} ${esc(costLabel(m))} cost per task, ${fmtS(m.e2e_response_time_s)}"/>`);
+/** Right-side labels: top-first, at least `spacing` apart, shifted up if they overflow. */
+function layoutLabels(entries, Y0, maxLabels, spacing = CONFIG.layout.labelSpacing) {
+  const kept = entries.map((e, i) => [e, i]).sort((a, b) => a[0].y - b[0].y || a[1] - b[1])
+    .slice(0, maxLabels).map(([e]) => e);
+  let prev = 6;
+  const out = kept.map((e) => {
+    const ly = Math.max(e.y, prev + spacing);
+    prev = ly;
+    return { ...e, ly };
   });
-  // Direct labels: only the Pareto models. Labels that would overlap
-  // are pushed down. A pushed label gets a thin leader line to its point.
-  const labels = front.map((m) => {
-    const x = px(effectiveCost(m)), y = py(m[metric]);
-    const left = x > W - pad.right - 150;
-    return { m, x, y, left, ly: y - 9 };
-  }).sort((a, b) => a.ly - b.ly);
-  for (let i = 1; i < labels.length; i++) {
-    if (labels[i].ly - labels[i - 1].ly < 14) labels[i].ly = labels[i - 1].ly + 14;
+  const overflow = out.length ? out[out.length - 1].ly - Y0 : 0;
+  if (overflow > 0) for (const o of out) o.ly -= overflow;
+  return out;
+}
+
+/** Variants that pass the selection, reasoning and deprecation filters, with chart values. */
+function buildRows(data, s) {
+  const metric = metricById(s.metric);
+  const selected = new Set(s.selected), excluded = new Set(s.excluded);
+  const base = data.variants.filter((v) => selected.has(v.family) && !excluded.has(v.effort) &&
+    (s.deprecated || !data.families.get(v.family).deprecated));
+  const rows = [];
+  for (const v of base) {
+    const y = v.scores[metric.id];
+    const x = effectiveCost(v, s.plans);
+    if (y == null || (!s.linear && !(x > 0))) continue;
+    rows.push({ v, id: v.id, family: v.family, x, y,
+      ghost: v.time != null && v.time > s.maxTime });
   }
-  for (const l of labels) {
-    const lx = l.x + (l.left ? -9 : 9);
-    if (Math.abs(l.ly - (l.y - 9)) > 5) {
-      parts.push(`<line x1="${l.x + (l.left ? -5 : 5)}" y1="${l.y + (l.ly > l.y ? 4 : -4)}" x2="${lx + (l.left ? -2 : 2)}" y2="${l.ly + 1}" stroke="var(--text-muted)" stroke-width="1" opacity="0.55"/>`);
+  return { metric, base, rows, visible: rows.filter((r) => !r.ghost), ghosts: rows.filter((r) => r.ghost) };
+}
+
+/** Everything the chart draws, derived from data, state and canvas size. */
+function chartModel(data, s) {
+  const { metric, base, rows, visible, ghosts } = buildRows(data, s);
+  const geo = geometry(s.size.width, s.size.height, s.compact);
+  const pareto = s.frontier ? paretoSet(visible) : [];
+  const paretoIds = new Set(pareto.map((r) => r.id));
+  const paretoFams = new Set(pareto.map((r) => r.family));
+  const xd = xDomain(rows.map((r) => r.x), s.linear);
+  const zoomed = s.zoomY && s.frontier && pareto.length > 0;
+  const yd = yDomain((zoomed ? pareto : rows).map((r) => r.y), zoomed);
+  const xs = (s.linear ? linearScale : logScale)(xd, [geo.X0, geo.X1]);
+  const ys = linearScale(yd, [geo.Y0, geo.Ytop]);
+  const inY = (r) => r.y >= yd[0] && r.y <= yd[1];
+
+  // Families in paint order, each with its rows in effort order.
+  const families = new Map();
+  for (const r of visible) {
+    if (!families.has(r.family)) families.set(r.family, []);
+    families.get(r.family).push(r);
+  }
+  for (const list of families.values()) list.sort((a, b) => a.v.effortOrder - b.v.effortOrder);
+
+  const byId = new Map(visible.map((r) => [r.id, r]));
+  const pinned = byId.get(s.pinned) || null;
+  const hovered = byId.get(s.hovered) || null;
+  const active = hovered || pinned;
+  const comparing = !!(pinned && hovered && pinned.id !== hovered.id);
+  const highlights = new Set(s.highlights);
+  let focus = (s.labels && s.labelHover) || s.focusFamily || (geo.compact && pinned ? pinned.family : null);
+  if (focus && !families.has(focus)) focus = null;
+  const anyEmph = visible.some((r) => highlights.has(r.family)) || !!focus;
+  const emph = (f) => highlights.has(f) || f === focus;
+
+  // One label per family, anchored at its best-scoring variant inside the Y range.
+  let labels = [];
+  if (s.labels && !geo.compact) {
+    const entries = [];
+    for (const [family, list] of families) {
+      const anchor = list.filter(inY).reduce((best, r) => (!best || r.y > best.y ? r : best), null);
+      if (anchor) entries.push({ family, anchor, y: ys(anchor.y) });
     }
-    parts.push(`<text class="label" x="${lx}" y="${l.ly + 3.5}" text-anchor="${l.left ? "end" : "start"}" font-size="11" fill="var(--text-primary)">${esc(l.m.name)}</text>`);
+    labels = layoutLabels(entries, geo.Y0, geo.maxLabels);
   }
 
-  svg.innerHTML = parts.join("");
+  return {
+    metric, base, rows, visible, ghosts, geo, xd, yd, xs, ys, zoomed,
+    xTicks: s.linear ? niceTicks(0, xd[1]) : logTicks(xd[0], xd[1], geo.compact),
+    yTicks: niceTicks(yd[0], yd[1]),
+    pareto, paretoIds, paretoFams, families, labels,
+    pinned, hovered, active, comparing, highlights, focus, anyEmph, emph,
+  };
+}
 
-  // Tooltip wiring on the hit circles.
-  svg.querySelectorAll("circle[data-i]").forEach((c) => {
-    const m = shown[+c.dataset.i];
-    const show = () => showTooltip(m, c);
-    c.addEventListener("pointerenter", show);
-    c.addEventListener("focus", show);
-    c.addEventListener("pointerleave", hideTooltip);
-    c.addEventListener("blur", hideTooltip);
+/* ---------- URL codec ---------- */
+const URL_KEYS = {
+  metric: "metric", selected: "models", excluded: "hide-reasoning", frontier: "frontier",
+  linear: "linear", labels: "labels", maxTime: "max_response_time", deprecated: "deprecated",
+};
+const sameSet = (a, b) => a.length === b.length && a.every((x) => b.includes(x));
+const parseBool = (v) => v.toLowerCase() === "true";
+const parseList = (v, known) => [...new Set(v.split(",").filter((x) => known.has(x)))];
+
+/**
+ * Read state from a query string. Unknown values fall back to defaults.
+ * `known` = { families: Set, efforts: Set }.
+ */
+function decodeUrl(search, known) {
+  const p = new URLSearchParams(search);
+  const d = CONFIG.defaults;
+  const get = (k) => p.get(k);
+  const out = {};
+  const metric = get(URL_KEYS.metric);
+  out.metric = CONFIG.metrics.some((m) => m.id === metric) ? metric : d.metric;
+  const models = get(URL_KEYS.selected);
+  const selected = models == null ? [] : parseList(models, known.families);
+  out.selected = selected.length ? selected : [...d.selected];
+  const hide = get(URL_KEYS.excluded);
+  out.excluded = hide == null ? [...d.excluded] : parseList(hide, known.efforts);
+  for (const key of ["frontier", "linear", "labels", "deprecated"]) {
+    const v = get(URL_KEYS[key]);
+    out[key] = v == null ? d[key] : parseBool(v);
+  }
+  out.plans = {};
+  for (const group of CONFIG.plans) {
+    const id = get(group.urlKey);
+    out.plans[group.key] = group.options.some((o) => o.id === id) ? id : d.plans[group.key];
+  }
+  const t = Number(get(URL_KEYS.maxTime));
+  out.maxTime = get(URL_KEYS.maxTime) != null && t > 0 ? t : d.maxTime;
+  return out;
+}
+
+/** Write state as a readable query string. Defaults are omitted; other params are kept. */
+function encodeUrl(s, existingSearch = "") {
+  const d = CONFIG.defaults;
+  const p = new URLSearchParams(existingSearch);
+  const managed = [...Object.values(URL_KEYS), ...CONFIG.plans.map((g) => g.urlKey)];
+  for (const k of managed) p.delete(k);
+  const pairs = [...p].map(([k, v]) => [k, v]);
+  const add = (k, v) => pairs.push([k, String(v)]);
+  if (s.metric !== d.metric) add(URL_KEYS.metric, s.metric);
+  if (!sameSet(s.selected, d.selected)) add(URL_KEYS.selected, s.selected.join(","));
+  if (!sameSet(s.excluded, d.excluded)) add(URL_KEYS.excluded, s.excluded.join(","));
+  for (const key of ["frontier", "linear", "labels"]) if (s[key] !== d[key]) add(URL_KEYS[key], s[key]);
+  for (const group of CONFIG.plans) {
+    if (s.plans[group.key] !== d.plans[group.key]) add(group.urlKey, s.plans[group.key]);
+  }
+  if (Number.isFinite(s.maxTime)) add(URL_KEYS.maxTime, s.maxTime);
+  if (s.deprecated !== d.deprecated) add(URL_KEYS.deprecated, s.deprecated);
+  const enc = (v) => encodeURIComponent(v).replace(/%2C/gi, ",");
+  return pairs.length ? "?" + pairs.map(([k, v]) => enc(k) + "=" + enc(v)).join("&") : "";
+}
+
+/* =========================================================================
+ * State
+ * ========================================================================= */
+const state = {
+  data: null,             // normalise(models.json)
+  // Stored in the URL.
+  metric: CONFIG.defaults.metric,
+  selected: [...CONFIG.defaults.selected],
+  excluded: [...CONFIG.defaults.excluded],
+  frontier: CONFIG.defaults.frontier,
+  linear: CONFIG.defaults.linear,
+  labels: CONFIG.defaults.labels,
+  plans: { ...CONFIG.defaults.plans },
+  maxTime: CONFIG.defaults.maxTime,
+  deprecated: CONFIG.defaults.deprecated,
+  // Session only.
+  zoomY: false,
+  theme: document.documentElement.dataset.theme === "light" ? "light" : "dark",
+  hovered: null,          // variant id under the pointer or keyboard focus
+  pinned: null,           // clicked variant id
+  labelHover: null,       // family whose right-side label is hovered
+  highlights: [],         // highlighted family ids
+  focusFamily: null,      // family hovered in the sidebar
+  size: { ...CONFIG.layout.initialSize },
+  compact: false,
+};
+
+/* =========================================================================
+ * DOM
+ * ========================================================================= */
+const $ = (id) => document.getElementById(id);
+const els = {
+  tabs: $("metric-tabs"), theme: $("theme-toggle"), title: $("chart-title"),
+  pareto: $("pareto-toggle"), linear: $("scale-linear"), log: $("scale-log"),
+  zoom: $("zoom-toggle"), deprecated: $("deprecated-toggle"),
+  canvas: $("chart-canvas"), svg: $("chart"), tooltip: $("tooltip"),
+  empty: $("empty-state"), emptyTitle: $("empty-title"), emptyText: $("empty-text"), emptyAction: $("empty-action"),
+  count: $("model-count"), reset: $("reset-selection"), efforts: $("effort-buttons"),
+  plans: $("plan-sections"), slider: $("time-slider"), readout: $("time-readout"),
+};
+const ICONS = {
+  sun: '<circle cx="12" cy="12" r="4.2"/><path d="M12 1.8v2.4M12 19.8v2.4M1.8 12h2.4M19.8 12h2.4M4.8 4.8l1.7 1.7M17.5 17.5l1.7 1.7M4.8 19.2l1.7-1.7M17.5 6.5l1.7-1.7"/>',
+  moon: '<path d="M20.5 14.2A8.6 8.6 0 1 1 9.8 3.5a6.8 6.8 0 0 0 10.7 10.7z"/>',
+  close: '<path d="M6 6l12 12M18 6L6 18"/>',
+};
+const icon = (name, size = 16) =>
+  `<svg class="icon" viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true">${ICONS[name]}</svg>`;
+
+/** Lab mark for HTML: a logo from the sprite, or a letter monogram. */
+function labMark(lab, labName, size) {
+  if (CONFIG.labs[lab]?.logo) {
+    return `<svg class="lab-logo" width="${size}" height="${size}" aria-hidden="true"><use href="#logo-${esc(lab)}"/></svg>`;
+  }
+  return `<span class="lab-logo lab-monogram" aria-hidden="true" style="width:${size}px;height:${size}px;font-size:${size * 0.55}px">${esc((labName || lab || "?").charAt(0))}</span>`;
+}
+
+/** Replace an element's markup, keeping keyboard focus on the element with the same data-key. */
+function setHTML(el, html) {
+  if (el._html === html) return;
+  const active = document.activeElement;
+  const key = el.contains(active) ? active.getAttribute("data-key") : null;
+  el._html = html;
+  el.innerHTML = html;
+  if (key != null) el.querySelector(`[data-key="${CSS.escape(key)}"]`)?.focus({ preventScroll: true });
+}
+
+function themeColors() {
+  const cs = getComputedStyle(document.documentElement);
+  const v = (name) => cs.getPropertyValue(name).trim();
+  return { bg: v("--bg"), fg: v("--fg"), fg2: v("--fg-2"), fg3: v("--fg-3"),
+    line: v("--line"), line2: v("--line-2"), hover: v("--hover") };
+}
+
+/* ---------- Header ---------- */
+function renderHeader() {
+  let html = "";
+  CONFIG.metrics.forEach((m, i) => {
+    // A divider separates the Artificial Analysis benchmarks from the LiveBench ones.
+    if (i && m.livebench && !CONFIG.metrics[i - 1].livebench) html += '<span class="tab-divider" aria-hidden="true"></span>';
+    html += `<button type="button" data-key="${m.id}" aria-current="${m.id === state.metric}">${esc(m.tab)}</button>`;
   });
-
-  renderTable(shown, frontSet);
+  setHTML(els.tabs, html);
+  const light = state.theme === "light";
+  els.theme.innerHTML = icon(light ? "moon" : "sun");
+  els.theme.title = light ? "Switch to dark mode" : "Switch to light mode";
+  els.theme.setAttribute("aria-label", els.theme.title);
 }
 
-function esc(s) {
-  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;");
+/* ---------- Toolbar ---------- */
+function renderToolbar() {
+  const metric = metricById(state.metric);
+  els.title.textContent = metric.title;
+  els.pareto.setAttribute("aria-pressed", state.frontier);
+  els.linear.setAttribute("aria-pressed", state.linear);
+  els.log.setAttribute("aria-pressed", !state.linear);
+  els.zoom.disabled = !state.frontier;
+  els.zoom.setAttribute("aria-pressed", state.zoomY && state.frontier);
+  els.deprecated.setAttribute("aria-pressed", state.deprecated);
 }
 
-function livebenchScore(m, metric) {
-  const score = fmtScore(m[metric]);
-  const meta = m.livebench, count = meta?.subtasks?.[metric];
-  if (!count || m[metric] == null) return score;
-  const detail = `${meta.release} · ${meta.source_model} · ${count.completed}/${count.expected} subtasks`;
-  return `${score}<br><small>${esc(detail)}</small>`;
+/* ---------- Sidebar ---------- */
+function renderSidebar() {
+  const data = state.data;
+  els.count.textContent = state.selected.length;
+
+  // Reasoning levels present in the selected families, in effort order.
+  const selected = new Set(state.selected);
+  const levels = new Map();
+  data.variants.filter((v) => selected.has(v.family)).sort((a, b) => a.effortOrder - b.effortOrder)
+    .forEach((v) => { if (!levels.has(v.effort)) levels.set(v.effort, v); });
+  setHTML(els.efforts, [...levels.values()].map((v) =>
+    `<button type="button" data-key="${v.effort}" aria-pressed="${!state.excluded.includes(v.effort)}">${esc(effortText(v))}</button>`).join(""));
+
+  setHTML(els.plans, CONFIG.plans.map((group) => `
+    <section class="option-section" aria-labelledby="plan-${group.key}-heading">
+      <div class="section-head">
+        <h3 id="plan-${group.key}-heading">${esc(group.label)}</h3>
+        <div role="group" aria-labelledby="plan-${group.key}-heading">${group.options.map((o) =>
+          `<button type="button" data-key="${group.key}:${o.id}" data-group="${group.key}" data-plan="${o.id}" title="${esc(o.fullName)}" aria-pressed="${state.plans[group.key] === o.id}">${esc(o.name)}</button>`).join("")}</div>
+      </div>
+    </section>`).join(""));
+
+  renderTimeFilter();
 }
 
-function showTooltip(m, circle) {
-  const cost = effectiveCost(m);
-  tooltip.innerHTML =
-    `<strong>${esc(m.name)}</strong><br>` +
-    `<span style="color:var(--text-secondary)">${esc(m.creator)} · via ${esc(m.provider)}</span>` +
-    `<table>
-      <tr><td>Intelligence Index</td><td>${fmtScore(m.intelligence_index)}</td></tr>
-      <tr><td>Coding (SciCode)</td><td>${fmtScore(m.coding_index)}</td></tr>
-      <tr><td>Math (AIME 2025)</td><td>${fmtScore(m.math_index)}</td></tr>
-      <tr><td>Terminal-Bench v4.0</td><td>${fmtScore(m.terminalbench_v4_0)}</td></tr>
-      <tr><td>LiveBench Coding</td><td>${livebenchScore(m, "livebench_coding")}</td></tr>
-      <tr><td>LiveBench Agentic Coding</td><td>${livebenchScore(m, "livebench_agentic_coding")}</td></tr>
-      <tr><td>${esc(costLabel(m))} cost per task</td><td>${fmt$(cost)}</td></tr>
-      ${cost !== m.cost_per_task ? `<tr><td>API cost per task</td><td>${fmt$(m.cost_per_task)}</td></tr>` : ""}
-      <tr><td>Response time</td><td>${fmtS(m.e2e_response_time_s)}</td></tr>
-      <tr><td>Price in / out (1M)</td><td>${fmt$(m.price_1m_input_tokens)} / ${fmt$(m.price_1m_output_tokens)}</td></tr>
-      <tr><td>Output speed</td><td>${Math.round(m.output_tokens_per_second)} tok/s</td></tr>
-    </table>`;
-  const card = svg.parentElement.getBoundingClientRect();
-  const dot = circle.getBoundingClientRect();
-  let x = dot.left - card.left + 18;
-  let y = dot.top - card.top - 10;
-  tooltip.style.opacity = "1";
-  tooltip.style.left = "0"; tooltip.style.top = "0";
-  const tw = tooltip.offsetWidth, th = tooltip.offsetHeight;
-  if (x + tw > card.width - 8) x = dot.left - card.left - tw - 18;
-  if (y + th > card.height - 8) y = card.height - th - 8;
-  tooltip.style.left = Math.max(4, x) + "px";
-  tooltip.style.top = Math.max(4, y) + "px";
-}
-function hideTooltip() { tooltip.style.opacity = "0"; }
-
-/* ---------- table view ---------- */
-function renderTable(shown, frontSet) {
-  if (document.getElementById("table-view").hidden) return;
-  const rows = [...shown].sort((a, b) => b[state.metric] - a[state.metric]);
-  document.querySelector("#data-table tbody").innerHTML = rows.map((m) => `
-    <tr>
-      <td>${esc(m.name)}</td><td>${esc(m.creator)}</td><td>${esc(m.provider)}</td>
-      <td class="num">${fmtScore(m.intelligence_index)}</td>
-      <td class="num">${fmtScore(m.coding_index)}</td>
-      <td class="num">${fmtScore(m.math_index)}</td>
-      <td class="num">${fmtScore(m.terminalbench_v4_0)}</td>
-      <td class="num">${livebenchScore(m, "livebench_coding")}</td>
-      <td class="num">${livebenchScore(m, "livebench_agentic_coding")}</td>
-      <td class="num" title="API: ${m.cost_per_task.toFixed(3)}">${effectiveCost(m).toFixed(3)}</td>
-      <td class="num">${fmtS(m.e2e_response_time_s)}</td>
-      <td>${frontSet.has(m) ? "Yes" : ""}</td>
-    </tr>`).join("");
+function renderTimeFilter() {
+  const { timeRange } = state.data;
+  // Keep the thumb where the user dragged it; move it only when state came from elsewhere.
+  if (sliderToSeconds(+els.slider.value, CONFIG.sliderSteps, timeRange) !== state.maxTime) {
+    els.slider.value = secondsToSlider(state.maxTime, CONFIG.sliderSteps, timeRange);
+  }
+  els.slider.style.setProperty("--fill", (+els.slider.value / CONFIG.sliderSteps * 100) + "%");
+  if (!Number.isFinite(state.maxTime)) {
+    els.readout.textContent = "No limit";
+  } else {
+    const hidden = buildRows(state.data, state).ghosts.length;
+    els.readout.textContent = `≤ ${Math.round(state.maxTime)} s · ${hidden} hidden`;
+  }
+  els.slider.setAttribute("aria-valuetext", els.readout.textContent);
 }
 
-/* ---------- responsive re-render ---------- */
-let resizeTimer;
-window.addEventListener("resize", () => {
-  clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(render, 120);
+/* ---------- Chart ---------- */
+let chartRendering = false;
+
+function renderChart() {
+  if (!state.data) return;
+  const m = chartModel(state.data, state);
+  const showEmpty = m.rows.length < CONFIG.minChartPoints;
+  renderEmpty(m, showEmpty);
+  els.svg.style.visibility = showEmpty ? "hidden" : "";
+  els.svg.setAttribute("aria-label", `${m.metric.axis} versus cost per task`);
+  chartRendering = true;
+  try {
+    setHTML(els.svg, showEmpty ? "" : drawChart(m, themeColors()));
+  } finally {
+    chartRendering = false;
+  }
+  els.svg.setAttribute("viewBox", `0 0 ${m.geo.W} ${m.geo.H}`);
+  renderTooltip(showEmpty ? null : m);
+}
+
+function drawChart(m, c) {
+  const { geo, xs, ys, metric } = m;
+  const { W, H, v, X0, X1, Y0, Ytop } = geo;
+  const theme = state.theme;
+  const col = (r) => familyColor(r.family, r.v.lab, theme);
+  const out = [];
+
+  out.push(`<rect width="${W}" height="${H}" fill="${c.bg}"/>`);
+  out.push(`<text x="${X0}" y="18" fill="${c.fg2}" font-size="${12 * v}">${esc(metric.axis)}</text>`);
+  for (const t of m.yTicks) {
+    out.push(`<g transform="translate(0 ${round2(ys(t))})"><line x1="${X0}" x2="${X1}" stroke="${c.line}" stroke-dasharray="2 6"/>` +
+      `<text x="${X0 - 17}" y="4" text-anchor="end" fill="${c.fg3}" font-size="${12 * v}">${t}</text></g>`);
+  }
+  for (const t of m.xTicks) {
+    out.push(`<g transform="translate(${round2(xs(t))} ${Y0})"><line y2="5" stroke="${c.line2}"/>` +
+      `<text y="26" text-anchor="middle" fill="${c.fg3}" font-size="${12 * v}">${fmtCost(t, true)}</text></g>`);
+  }
+  out.push(`<line x1="${X0}" x2="${X1}" y1="${Y0}" y2="${Y0}" stroke="${c.line2}"/>`);
+
+  // Rows outside the zoomed Y range are clipped to the plot.
+  const clip = m.zoomed ? ' clip-path="url(#plot-clip)"' : "";
+  if (m.zoomed) out.push(`<clipPath id="plot-clip"><rect x="0" y="${Ytop - 8}" width="${W}" height="${Y0 - Ytop + 8}"/></clipPath>`);
+  const at = (r) => `cx="${round2(xs(r.x))}" cy="${round2(ys(r.y))}"`;
+
+  if (m.pareto.length > 1) {
+    const d = m.pareto.map((r, i) => `${i ? "L" : "M"}${round2(xs(r.x))},${round2(ys(r.y))}`).join(" ");
+    out.push(`<path d="${d}" fill="none" stroke="${c.fg}" stroke-width="2.5" stroke-dasharray="6 5" opacity=".95" pointer-events="none"${clip}/>`);
+  }
+
+  // Models hidden by the response time filter: faint, not interactive, not on any line.
+  if (m.ghosts.length) {
+    out.push(`<g class="ghosts" pointer-events="none" opacity=".15"${clip}>` +
+      m.ghosts.map((r) => `<circle ${at(r)} r="4.5" fill="${col(r)}"/>`).join("") + "</g>");
+  }
+
+  const pareto = m.pareto.length > 0;
+  for (const [family, rows] of m.families) {
+    const color = col(rows[0]);
+    const e = m.emph(family);
+    const groupOpacity = !pareto && m.anyEmph && !e ? 0.15 : 1;
+    const lineOpacity = pareto ? (e ? 0.6 : m.paretoFams.has(family) ? 0.25 : 0.08) : (e ? 1 : 0.8);
+    const dash = rows[0].v.deprecated ? ' stroke-dasharray="5 5"' : "";
+    let g = `<g data-family="${esc(family)}" opacity="${groupOpacity}"${clip}>`;
+    if (rows.length > 1) {
+      const d = rows.map((r, i) => `${i ? "L" : "M"}${round2(xs(r.x))},${round2(ys(r.y))}`).join(" ");
+      g += `<path d="${d}" fill="none" stroke="${color}" stroke-width="${e ? 3.5 : 2.25}" opacity="${lineOpacity}"${dash} pointer-events="none"/>`;
+    }
+    for (const r of rows) {
+      const isActive = r === m.active, isPinned = r === m.pinned, onFront = m.paretoIds.has(r.id);
+      const radius = isActive || isPinned ? 7 : onFront ? 6 : 4.5;
+      const opacity = pareto ? (onFront || isActive || isPinned ? 1 : 0.15)
+        : (m.anyEmph || !m.active || isActive || isPinned ? 1 : 0.45);
+      const label = `${r.v.name}, ${r.v.effortLabel}, cost per task ${fmtCost(r.x)}, ${metric.axis} ${fmtScore(r.y)}`;
+      g += `<g role="button" tabindex="0" data-key="p:${esc(r.id)}" data-id="${esc(r.id)}" aria-pressed="${isPinned}" aria-label="${esc(label)}" opacity="${opacity}">` +
+        `<circle ${at(r)} r="13" fill="transparent"/>` +
+        `<circle ${at(r)} r="${radius}" fill="${color}" stroke="${onFront ? c.fg : c.bg}" stroke-width="${onFront ? 1.5 : 1.8}"/></g>`;
+    }
+    out.push(g + "</g>");
+  }
+
+  // Right-side family labels with leader lines.
+  for (const l of m.labels) {
+    const r = l.anchor, f = state.data.families.get(l.family);
+    const color = col(r);
+    const px = round2(xs(r.x)), py = round2(ys(r.y)), ly = round2(l.ly);
+    out.push(`<path d="M${px + 6},${py} L${X1 + 18},${ly} L${X1 + 20},${ly}" fill="none" stroke="${color}" stroke-width=".75" opacity=".22" pointer-events="none"/>`);
+    const opacity = pareto ? (m.paretoFams.has(l.family) ? 1 : 0.2) : (m.anyEmph && !m.emph(l.family) ? 0.4 : 1);
+    const weight = m.paretoFams.has(l.family) ? 700 : 550;
+    let mark;
+    if (CONFIG.labs[f.lab]?.logo) {
+      mark = `<use href="#logo-${esc(f.lab)}" x="27" y="-9" width="18" height="18" color="${c.fg}"/>`;
+    } else {
+      mark = `<rect x="27" y="-9" width="18" height="18" rx="3" fill="${c.hover}"/>` +
+        `<text x="36" y="3.5" text-anchor="middle" font-size="9.9" font-weight="600" fill="${c.fg2}">${esc((f.labName || f.lab).charAt(0))}</text>`;
+    }
+    out.push(`<g class="series-label" role="button" tabindex="0" data-key="l:${esc(l.family)}" data-label="${esc(l.family)}" aria-pressed="${m.highlights.has(l.family)}" aria-label="Highlight ${esc(f.name)}" transform="translate(${X1} ${ly})" opacity="${opacity}">` +
+      `<rect x="24" y="-12" width="${W - X1 - 24}" height="24" fill="transparent"/>${mark}` +
+      `<text x="53" y="4" fill="${color}" font-size="${13 * v}" font-weight="${weight}">${esc(shortName(f.name))}</text></g>`);
+  }
+
+  out.push(`<text x="${round2((X0 + X1) / 2)}" y="${geo.xTitleY}" text-anchor="middle" fill="${c.fg2}" font-size="${geo.xTitleSize}">${esc(xTitle())}</text>`);
+
+  // Crosshairs: the pinned model, plus the hovered one when comparing.
+  const marked = m.pinned ? [m.pinned, ...(m.comparing ? [m.hovered] : [])] : m.hovered ? [m.hovered] : [];
+  let overlay = "";
+  for (const r of marked) {
+    const color = col(r), px = round2(xs(r.x)), py = round2(ys(r.y));
+    const dash = r === m.pinned ? "" : ' stroke-dasharray="4 4"';
+    const halo = `stroke="${c.bg}" stroke-width="3" paint-order="stroke"`;
+    overlay += `<line x1="${X0}" x2="${X1}" y1="${py}" y2="${py}" stroke="${color}" stroke-opacity=".8"${dash}/>` +
+      `<text x="${X0 + 6}" y="${py - 7}" fill="${color}" font-size="${11 * v}" ${halo}>${fmtScore(r.y)}</text>` +
+      `<line x1="${px}" x2="${px}" y1="${Ytop}" y2="${Y0}" stroke="${color}" stroke-opacity=".5"${dash}/>` +
+      `<text x="${Math.min(px + 6, X1 - 60)}" y="${Y0 - 8}" fill="${color}" font-size="${11 * v}" ${halo}>${fmtCost(r.x)}</text>`;
+  }
+  out.push(`<g pointer-events="none" aria-hidden="true">${overlay}</g>`);
+  return out.join("");
+}
+
+function xTitle() {
+  const planned = CONFIG.plans.some((g) => state.plans[g.key] !== g.options[0].id);
+  return `${planned ? "Effective cost" : "Cost"} per task (USD${state.linear ? "" : ", log scale"})`;
+}
+
+/* ---------- Empty state ---------- */
+function familiesWithData(metricId) {
+  return [...state.data.families.values()]
+    .filter((f) => (state.deprecated || !f.deprecated) && f.variants.some((v) => v.scores[metricId] != null))
+    .map((f) => f.id);
+}
+
+function renderEmpty(m, show) {
+  els.empty.hidden = !show;
+  if (!show) return;
+  const tab = m.metric.tab;
+  let title;
+  if (!state.selected.length) title = "No models selected";
+  else if (!m.base.length) title = state.excluded.length ? "No reasoning levels enabled" : "No models to show";
+  else if (!m.rows.length) title = `No ${tab} data for the selected models`;
+  else title = `Only ${m.rows.length} selected model${m.rows.length === 1 ? " has" : "s have"} ${tab} data`;
+  els.emptyTitle.textContent = title;
+  els.emptyText.textContent = `The chart needs at least ${CONFIG.minChartPoints} models with data.`;
+  els.emptyAction.textContent = `Show models with ${tab} data`;
+  els.emptyAction.hidden = familiesWithData(m.metric.id).every((f) => state.selected.includes(f)) &&
+    state.excluded.length === 0;
+}
+
+function showModelsWithData() {
+  const add = familiesWithData(state.metric).filter((f) => !state.selected.includes(f));
+  state.selected = [...state.selected, ...add];
+  if (buildRows(state.data, state).rows.length < CONFIG.minChartPoints) state.excluded = [];
+  update();
+}
+
+/* ---------- Tooltip ---------- */
+function tooltipRows(r) {
+  const v = r.v, metric = metricById(state.metric);
+  const plan = planFor(v, state.plans);
+  const rows = [{ key: "score", label: metric.axis, value: r.y, text: fmtScore(r.y), note: livebenchNote(v, metric) }];
+  rows.push({ key: "cost", label: plan ? `Cost per task (${plan.fullName})` : "Cost per task", value: r.x, text: fmtCost(r.x) });
+  if (plan) rows.push({ key: "api", label: "API cost per task", value: v.cost, text: fmtCost(v.cost) });
+  rows.push({ key: "time", label: "Response time", value: v.time, text: fmtSeconds(v.time) });
+  rows.push({ key: "speed", label: "Output speed", value: v.speed, text: fmtSpeed(v.speed) });
+  return rows;
+}
+function livebenchNote(v, metric) {
+  const meta = v.livebench, count = meta?.subtasks?.[metric.id];
+  if (!metric.livebench || !meta || !count) return "";
+  return `${meta.release} · ${meta.source_model} · ${count.completed}/${count.expected} subtasks`;
+}
+
+function renderTooltip(m) {
+  const tip = els.tooltip;
+  const r = m && m.active;
+  if (!r) { tip.hidden = true; setHTML(tip, ""); return; }
+  tip.hidden = false;
+  tip.className = "chart-tooltip scatter-tooltip" + (m.pinned ? " pinned" : "") + (m.comparing ? " comparing" : "");
+  const color = familyColor(r.family, r.v.lab, state.theme);
+  let html = `<div class="tooltip-head"><strong>${labMark(r.v.lab, r.v.labName, 18)}<span style="color:${color}">${esc(r.v.name)}</span></strong>` +
+    `<button type="button" data-key="close" aria-label="Close details">${icon("close", 14)}</button></div>` +
+    `<p>${esc(r.v.effortLabel)}${r === m.pinned ? " · Pinned" : ""}</p>`;
+  if (m.comparing) {
+    const a = m.pinned, h = m.hovered;
+    const ra = tooltipRows(a), rh = tooltipRows(h);
+    const keys = [...new Set([...ra, ...rh].map((x) => x.key))];
+    const find = (list, k) => list.find((x) => x.key === k);
+    html += `<div class="comparison-reference">${labMark(a.v.lab, a.v.labName, 14)}vs ${esc(a.v.name)} · ${esc(a.v.effortLabel)}</div>` +
+      `<table class="comparison-table"><thead><tr><th><span class="sr-only">Metric</span></th><th>Selected</th><th>Hovered</th><th>Multiplier</th></tr></thead><tbody>` +
+      keys.map((k) => {
+        const x = find(ra, k), y = find(rh, k);
+        const label = k === "cost" ? "Cost per task" : (x || y).label;
+        return `<tr><th>${esc(label)}</th><td>${x ? x.text : "—"}</td><td>${y ? y.text : "—"}</td><td>${fmtMult(y?.value, x?.value)}</td></tr>`;
+      }).join("") + "</tbody></table>";
+  } else {
+    html += tooltipRows(r).map((x) =>
+      `<div class="tooltip-value"><span>${esc(x.label)}</span><b>${x.text}${x.note ? `<small>${esc(x.note)}</small>` : ""}</b></div>`).join("");
+  }
+  html += `<a href="https://artificialanalysis.ai/models/${encodeURIComponent(r.id)}" target="_blank" rel="noreferrer">Artificial Analysis</a>`;
+  setHTML(tip, html);
+}
+
+/* ---------- Render and URL ---------- */
+function syncUrl() {
+  const search = encodeUrl(state, location.search);
+  if (search !== location.search) history.replaceState(null, "", location.pathname + search + location.hash);
+}
+function update() {
+  renderHeader();
+  renderToolbar();
+  renderSidebar();
+  renderChart();
+  syncUrl();
+}
+
+/* ---------- Theme ---------- */
+const themeQuery = matchMedia("(prefers-color-scheme: light)");
+function storedTheme() {
+  try { return localStorage.getItem("theme"); } catch (e) { return null; }
+}
+function applyTheme(theme) {
+  state.theme = theme;
+  document.documentElement.dataset.theme = theme;
+  document.querySelector('meta[name="theme-color"]').content = theme === "light" ? "#ffffff" : "#000000";
+  renderHeader();
+  renderChart();
+}
+els.theme.addEventListener("click", () => {
+  const theme = state.theme === "light" ? "dark" : "light";
+  try { localStorage.setItem("theme", theme); } catch (e) { /* storage blocked */ }
+  applyTheme(theme);
 });
+themeQuery.addEventListener("change", () => {
+  const stored = storedTheme();
+  if (stored !== "light" && stored !== "dark") applyTheme(themeQuery.matches ? "light" : "dark");
+});
+
+/* ---------- Controls ---------- */
+els.tabs.addEventListener("click", (e) => {
+  const id = e.target.closest("button[data-key]")?.dataset.key;
+  if (!id || id === state.metric) return;
+  state.metric = id;
+  update();
+});
+els.pareto.addEventListener("click", () => { state.frontier = !state.frontier; update(); });
+els.linear.addEventListener("click", () => { state.linear = true; update(); });
+els.log.addEventListener("click", () => { state.linear = false; update(); });
+els.zoom.addEventListener("click", () => { state.zoomY = !state.zoomY; update(); });
+els.deprecated.addEventListener("click", () => { state.deprecated = !state.deprecated; update(); });
+els.emptyAction.addEventListener("click", showModelsWithData);
+
+els.reset.addEventListener("click", () => {
+  const d = CONFIG.defaults;
+  Object.assign(state, { selected: [...d.selected], excluded: [...d.excluded], frontier: d.frontier,
+    linear: d.linear, labels: d.labels, zoomY: false, highlights: [], hovered: null, pinned: null, labelHover: null });
+  update();
+});
+els.efforts.addEventListener("click", (e) => {
+  const effort = e.target.closest("button[data-key]")?.dataset.key;
+  if (!effort) return;
+  state.excluded = state.excluded.includes(effort)
+    ? state.excluded.filter((x) => x !== effort) : [...state.excluded, effort];
+  update();
+});
+els.plans.addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-plan]");
+  if (!b) return;
+  state.plans = { ...state.plans, [b.dataset.group]: b.dataset.plan };
+  update();
+});
+
+els.slider.addEventListener("input", () => {
+  state.maxTime = sliderToSeconds(+els.slider.value, CONFIG.sliderSteps, state.data.timeRange);
+  renderTimeFilter();
+  renderChart();
+  syncUrl();
+});
+// A horizontal touchpad swipe over the slider or the chart nudges the slider by one step.
+// Mostly vertical scrolling is left alone.
+function nudgeOnHorizontalWheel(e) {
+  if (!state.data || !e.deltaX || Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+  e.preventDefault();
+  const value = Math.min(CONFIG.sliderSteps, Math.max(0, +els.slider.value + (e.deltaX > 0 ? 1 : -1)));
+  if (value === +els.slider.value) return;
+  els.slider.value = value;
+  els.slider.dispatchEvent(new Event("input", { bubbles: true }));
+}
+els.slider.addEventListener("wheel", nudgeOnHorizontalWheel, { passive: false });
+els.svg.addEventListener("wheel", nudgeOnHorizontalWheel, { passive: false });
+
+/* ---------- Chart interaction ---------- */
+const pointOf = (target) => target.closest?.("[data-id]")?.dataset.id ?? null;
+const labelOf = (target) => target.closest?.("[data-label]")?.dataset.label ?? null;
+function setHover(id, family) {
+  if (state.hovered === id && state.labelHover === family) return;
+  state.hovered = id;
+  state.labelHover = family;
+  renderChart();
+}
+function togglePin(id) {
+  state.pinned = state.pinned === id ? null : id;
+  state.hovered = null;
+  renderChart();
+}
+function toggleHighlight(family) {
+  state.highlights = state.highlights.includes(family)
+    ? state.highlights.filter((f) => f !== family) : [...state.highlights, family];
+  renderChart();
+}
+els.svg.addEventListener("pointerover", (e) => setHover(pointOf(e.target), labelOf(e.target)));
+els.svg.addEventListener("pointerleave", () => setHover(null, null));
+els.svg.addEventListener("focusin", (e) => { if (!chartRendering) setHover(pointOf(e.target), labelOf(e.target)); });
+els.svg.addEventListener("focusout", (e) => {
+  if (!chartRendering && !els.svg.contains(e.relatedTarget)) setHover(null, null);
+});
+els.svg.addEventListener("click", (e) => {
+  const id = pointOf(e.target), family = labelOf(e.target);
+  if (id) togglePin(id);
+  else if (family) toggleHighlight(family);
+});
+els.svg.addEventListener("keydown", (e) => {
+  const id = pointOf(e.target), family = labelOf(e.target);
+  if (e.key === "Enter" || e.key === " ") {
+    if (!id && !family) return;
+    e.preventDefault();
+    if (id) togglePin(id); else toggleHighlight(family);
+  } else if (e.key === "Escape" && id && state.pinned) {
+    state.pinned = null;
+    renderChart();
+  }
+});
+els.tooltip.addEventListener("click", (e) => {
+  if (!e.target.closest('button[data-key="close"]')) return;
+  state.pinned = state.hovered = null;
+  renderChart();
+});
+window.addEventListener("keydown", (e) => {
+  if (e.key !== "Escape") return;
+  if (!state.pinned && !state.hovered && !state.labelHover && !state.highlights.length) return;
+  Object.assign(state, { pinned: null, hovered: null, labelHover: null, highlights: [] });
+  renderChart();
+});
+
+/* ---------- Size ---------- */
+const compactQuery = matchMedia("(max-width: 900px)");
+state.compact = compactQuery.matches;
+compactQuery.addEventListener("change", () => { state.compact = compactQuery.matches; renderChart(); });
+new ResizeObserver(([entry]) => {
+  const width = Math.floor(entry.contentRect.width), height = Math.floor(entry.contentRect.height);
+  if (width === state.size.width && height === state.size.height) return;
+  state.size = { width, height };
+  renderChart();
+}).observe(els.canvas);
+
+/* ---------- Load ---------- */
+document.getElementById("brand").href = location.pathname;
+renderHeader();
+renderToolbar();
+fetch("models.json")
+  .then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+  .then((models) => {
+    state.data = normalise(models);
+    const known = { families: new Set(state.data.families.keys()), efforts: new Set(Object.keys(CONFIG.efforts)) };
+    Object.assign(state, decodeUrl(location.search, known));
+    update();
+  })
+  .catch((err) => {
+    els.empty.hidden = false;
+    els.emptyTitle.textContent = "Could not load models.json";
+    els.emptyText.textContent = `${err.message}. Serve this folder over HTTP, for example with ` +
+      "python3 -m http.server, and open the page through http://, not file://.";
+    els.emptyAction.hidden = true;
+    console.error(err);
+  });
+
+// Pure helpers for tests (page.evaluate).
+window.__chart = {
+  CONFIG, state, fmtCost, fmtScore, fmtSeconds, fmtSpeed, fmtMult, shortName, effortText,
+  normalise, familyColor, planFor, effectiveCost, sliderToSeconds, secondsToSlider,
+  geometry, xDomain, yDomain, linearScale, logScale, niceTicks, logTicks, paretoSet,
+  layoutLabels, buildRows, chartModel, decodeUrl, encodeUrl,
+};
 </script>
 </body>
 </html>
