@@ -866,6 +866,7 @@ const CONFIG = {
 
   sliderSteps: 200,
   minChartPoints: 3,
+  minTickGap: 3,          // px between X tick labels
   tapRadius: 40,          // compact chart: a tap pins the nearest point within this many px
   longPressMs: 500,
   png: { scale: 2, titleBand: 44, fileName: "intelligence-vs-cost" },
@@ -1071,16 +1072,14 @@ function logTicks(min, max, compact = false, mantissas = null) {
   return ticks;
 }
 
-/** Approximate width of an axis label: digits and "$" are about 0.6em wide. */
-const labelWidth = (text, size) => text.length * size * 0.6;
-
 /**
- * Log ticks whose labels stay 8px apart on the scale `xs`. A wide cost range (plans can
- * span four decades) falls back to fewer mantissas, then to every second, third or fifth decade.
+ * Log ticks whose labels keep `gap` px between them on the scale `xs`; `width(text)` is a
+ * label's width in px. Slopalytics' ticks come first. A wide cost range (plans can span four
+ * decades) falls back to fewer mantissas, then to every second, third or fifth decade.
  */
-function fitLogTicks(min, max, compact, xs, size) {
+function fitLogTicks(min, max, compact, xs, width, gap = CONFIG.minTickGap) {
   const fits = (ticks) => ticks.every((t, i) => !i || xs(t) - xs(ticks[i - 1]) >=
-    (labelWidth(fmtCost(t, true), size) + labelWidth(fmtCost(ticks[i - 1], true), size)) / 2 + 8);
+    (width(fmtCost(t, true)) + width(fmtCost(ticks[i - 1], true))) / 2 + gap);
   const decades = logTicks(min, max, compact, [1]);
   const candidates = [logTicks(min, max, compact), logTicks(min, max, compact, [1, 3]), decades,
     ...[2, 3, 5].map((n) => decades.filter((t) => Math.round(Math.log10(t)) % n === 0))];
@@ -1187,7 +1186,8 @@ function chartModel(data, s) {
 
   return {
     metric, base, rows, visible, ghosts, interactive, geo, xd, yd, xs, ys, zoomed, inY,
-    xTicks: s.linear ? niceTicks(0, xd[1]) : fitLogTicks(xd[0], xd[1], geo.compact, xs, 12 * geo.v),
+    xTicks: s.linear ? niceTicks(0, xd[1])
+      : fitLogTicks(xd[0], xd[1], geo.compact, xs, (text) => textWidth(text, chartFont(12 * geo.v))),
     yTicks: niceTicks(yd[0], yd[1]),
     pareto, paretoIds, paretoFams, families, labels, legend,
     pinned, hovered, active, comparing, highlights, focus, anyEmph, emph,
@@ -1517,6 +1517,7 @@ let themeColorCache = null;
 // Label widths, measured on a canvas with the label font. Cleared when web fonts load.
 const measureContext = document.createElement("canvas").getContext("2d");
 const textWidths = new Map();
+const chartFont = (size, weight = 400) => `${weight} ${size}px "DM Sans", system-ui, sans-serif`;
 function textWidth(text, font) {
   const key = font + "|" + text;
   if (!textWidths.has(key)) {
@@ -1771,7 +1772,7 @@ function drawChart(m, c) {
     const mark = logo ? `<use href="#logo-${esc(f.lab)}" x="27" y="-9" width="18" height="18" color="${c.fg}"/>` : "";
     // Long names are cut with an ellipsis to stay inside the chart; the full name is the title.
     const name = shortName(f.name);
-    const text = fitText(name, `${weight} ${13 * v}px "DM Sans", system-ui, sans-serif`, W - X1 - textX - 4);
+    const text = fitText(name, chartFont(13 * v, weight), W - X1 - textX - 4);
     out.push(`<g class="series-label" role="button" tabindex="0" data-key="l:${esc(l.family)}" data-label="${esc(l.family)}" aria-pressed="${m.highlights.has(l.family)}" aria-label="Highlight ${esc(f.name)}" transform="translate(${X1} ${ly})" opacity="${opacity}">` +
       (text === name ? "" : `<title>${esc(f.name)}</title>`) +
       `<rect x="24" y="-12" width="${W - X1 - 24}" height="24" fill="transparent"/>${mark}` +

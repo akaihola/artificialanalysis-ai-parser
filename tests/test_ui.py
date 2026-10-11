@@ -1379,6 +1379,17 @@ class PageTests(unittest.TestCase):
         for a, b in zip(boxes, boxes[1:]):
             self.assertGreaterEqual(b[0] - a[1], 2, boxes)
 
+    def test_default_ticks_match_slopalytics(self):
+        # Slopalytics' default cost range, $0.0047 to $7.63: its own ticks fit on a phone and
+        # on the narrow desktop layout, with measured label widths.
+        costs = {"gpt-6-luna": 0.0047, "claude-opus-5-5": 7.63}
+        models = [{**m, "cost_per_task": costs.get(m["slug"], m["cost_per_task"])} for m in MODELS]
+        for viewport, ticks in ((MOBILE, ["$0.01", "$0.03", "$0.1", "$0.3", "$1", "$3"]),
+                                ({"width": 1100, "height": 800},
+                                 ["$0.005", "$0.01", "$0.02", "$0.05", "$0.1", "$0.2", "$0.5", "$1", "$2", "$5"])):
+            page = self.open(models=models, viewport=viewport, has_touch=viewport is MOBILE)
+            self.assertEqual(self.ticks(page)[1], ticks, viewport)
+
     def test_mobile_header(self):
         page = self.open("?metric=livebench_agentic_coding", viewport=MOBILE, has_touch=True)
         # A shared link shows its benchmark tab, scrolled into view.
@@ -1417,7 +1428,8 @@ class PageTests(unittest.TestCase):
         self.assertEqual(page.evaluate("__chart.logTicks(0.035, 6.48, true)"), [0.1, 0.3, 1, 3])
         self.assertEqual(page.evaluate("__chart.logTicks(1, 10)"), [1, 1.5, 2, 3, 5, 7, 10])
         # Too little room for [1, 3] per decade: one tick per decade, then every second decade.
-        fit = "(w) => __chart.fitLogTicks(0.0002, 1.3, true, __chart.logScale([0.0002, 1.3], [40, 40 + w]), 12)"
+        fit = ("(w) => __chart.fitLogTicks(0.0002, 1.3, true, __chart.logScale([0.0002, 1.3], [40, 40 + w]),"
+               " (text) => text.length * 7.2)")
         self.assertEqual(page.evaluate(f"({fit})(600)"), [0.0003, 0.001, 0.003, 0.01, 0.03, 0.1, 0.3, 1])
         self.assertEqual(page.evaluate(f"({fit})(304)"), [0.001, 0.01, 0.1, 1])
         self.assertEqual(page.evaluate(f"({fit})(150)"), [0.01, 1])
