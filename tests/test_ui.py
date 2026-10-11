@@ -178,6 +178,12 @@ class PageTests(unittest.TestCase):
         page.evaluate("() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))")
 
     @staticmethod
+    def settle(page):
+        """Wait out the pointerover a browser sends for the new node under a resting cursor after a redraw."""
+        page.evaluate("() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))")
+        page.wait_for_timeout(100)
+
+    @staticmethod
     def state(page, expr):
         return page.evaluate(f"() => __chart.state.{expr}")
 
@@ -669,6 +675,131 @@ class PageTests(unittest.TestCase):
         page.click('#chart [data-id="grok-4-7"]')
         page.click('#chart [data-id="grok-4-7"]')
         self.assertIsNone(self.state(page, "pinned"))
+
+    def test_keyboard_focus_wins_over_a_resting_mouse(self):
+        page = self.open()
+        chart = page.locator("#chart").bounding_box()
+        page.mouse.move(chart["x"] + 200, chart["y"] + 60)  # the plot background
+        page.focus('#chart [data-id="claude-opus-5-5-high"]')
+        self.settle(page)
+        self.assertEqual(self.state(page, "hovered"), "claude-opus-5-5-high")
+        self.assertEqual(page.text_content("#tooltip p"), "high")
+        page.keyboard.press("Tab")
+        self.settle(page)
+        self.assertEqual(self.state(page, "hovered"), "claude-opus-5-5")
+        # Enter pins, and the next focused point is compared with the pinned one.
+        page.keyboard.press("Enter")
+        page.keyboard.press("Tab")
+        self.settle(page)
+        self.assertEqual(self.state(page, "hovered"), "gemini-4-argon")
+        self.assertIn("comparing", page.get_attribute("#tooltip", "class"))
+        # A label's focus emphasis survives too.
+        page.focus('.series-label[data-label="grok-4-7"]')
+        self.settle(page)
+        self.assertEqual(self.state(page, "labelHover"), "grok-4-7")
+
+        # The mouse resting on another point does not take over from the focused one.
+        page = self.open()
+        page.hover('#chart [data-id="gpt-6-luna"]')
+        page.focus('#chart [data-id="claude-opus-5-5"]')
+        self.settle(page)
+        self.assertEqual(self.state(page, "hovered"), "claude-opus-5-5")
+        self.assertEqual(page.text_content("#tooltip .tooltip-head strong"), "Claude Opus 5.5")
+
+    def test_escape_and_unpin_clear_hover_under_a_resting_mouse(self):
+        page = self.open()
+        page.click('#chart [data-id="claude-opus-5-5"]')
+        self.settle(page)
+        page.keyboard.press("Escape")
+        self.settle(page)
+        self.assertEqual([self.state(page, "pinned"), self.state(page, "hovered")], [None, None])
+        self.assertTrue(page.is_hidden("#tooltip"))
+        # Clicking the pinned point unpins it and leaves no hover behind.
+        page.click('#chart [data-id="grok-4-7"]')
+        self.assertEqual(self.state(page, "pinned"), "grok-4-7")
+        page.click('#chart [data-id="grok-4-7"]')
+        self.settle(page)
+        self.assertEqual([self.state(page, "pinned"), self.state(page, "hovered")], [None, None])
+        self.assertTrue(page.is_hidden("#tooltip"))
+        # Label hover ends with Escape too.
+        page.hover('.series-label[data-label="grok-4-7"]')
+        self.assertEqual(self.state(page, "labelHover"), "grok-4-7")
+        page.keyboard.press("Escape")
+        self.settle(page)
+        self.assertIsNone(self.state(page, "labelHover"))
+        # In fallback full screen, the second Escape leaves it while the mouse rests on a point.
+        page.evaluate("Object.defineProperty(document, 'fullscreenEnabled', { value: false, configurable: true })")
+        page.click("#fullscreen-button")
+        page.hover('#chart [data-id="gemini-4-argon"]')
+        self.assertEqual(self.state(page, "hovered"), "gemini-4-argon")
+        page.keyboard.press("Escape")
+        self.settle(page)
+        self.assertIsNone(self.state(page, "hovered"))
+        self.assertTrue(self.state(page, "fallbackFullscreen"))
+        page.keyboard.press("Escape")
+        self.assertFalse(self.state(page, "fallbackFullscreen"))
+
+    def test_context_menu_and_hover(self):
+        page = self.open()
+        # Hover keeps working while the menu is open.
+        page.click('.model-row[data-family="grok-4-7"]', button="right")
+        page.hover('#chart [data-id="gemini-4-argon"]')
+        self.assertEqual(self.state(page, "hovered"), "gemini-4-argon")
+        page.hover('.model-row[data-family="gpt-6-1-sol"]')
+        self.assertEqual(self.state(page, "focusFamily"), "gpt-6-1-sol")
+        self.assertTrue(page.is_visible("#context-menu"))
+        page.keyboard.press("Escape")
+        page.mouse.move(5, 5)
+        # Closing a menu opened on a point focuses the point, which shows its details.
+        page.click('#chart [data-id="grok-4-7"]', button="right")
+        self.assertIsNone(self.state(page, "hovered"))
+        page.keyboard.press("Escape")
+        self.assertTrue(page.is_hidden("#context-menu"))
+        self.assertEqual(page.evaluate("document.activeElement.dataset.id"), "grok-4-7")
+        self.assertEqual(self.state(page, "hovered"), "grok-4-7")
+        self.assertEqual(page.text_content("#tooltip .tooltip-head strong"), "Grok 4.7")
+
+    def test_row_focus_survives_the_mouse_over_a_heading(self):
+        page = self.open()
+        page.focus("#model-search")
+        # Tab to the row, so that it matches :focus-visible.
+        for _ in range(40):
+            page.keyboard.press("Tab")
+            if page.evaluate("document.activeElement.dataset.family") == "gpt-6-1-sol":
+                break
+        self.assertEqual(self.state(page, "focusFamily"), "gpt-6-1-sol")
+        page.hover('.model-section[aria-label="Notable"] h3')
+        self.assertEqual(self.state(page, "focusFamily"), "gpt-6-1-sol")
+        # A row under the mouse takes over, and leaving it hands back to the focused row.
+        page.hover('.model-row[data-family="grok-4-7"]')
+        self.assertEqual(self.state(page, "focusFamily"), "grok-4-7")
+        page.hover('.model-section[aria-label="Notable"] h3')
+        self.assertIsNone(self.state(page, "focusFamily"))
+
+    def test_touch_taps_on_the_desktop_layout(self):
+        page = self.open(viewport={"width": 1280, "height": 800}, has_touch=True)
+        self.assertFalse(self.state(page, "compact"))
+        page.tap('#chart [data-id="claude-opus-5-5"]')
+        self.assertEqual(self.state(page, "pinned"), "claude-opus-5-5")
+        self.assertEqual(page.text_content("#tooltip p"), "max · Pinned")
+        page.tap('.series-label[data-label="grok-4-7"]')
+        self.assertEqual(self.state(page, "highlights"), ["grok-4-7"])
+        self.assertEqual(page.get_attribute('.series-label[data-label="grok-4-7"]', "aria-pressed"), "true")
+
+    def test_long_press_without_a_click_then_menu_tap(self):
+        page = self.open(viewport=MOBILE, has_touch=True)
+        page.tap("#sheet-toggle")
+        row = page.locator('.model-row[data-family="grok-4-7"]')
+        box = row.bounding_box()
+        point = {"pointerType": "touch", "isPrimary": True, "bubbles": True,
+                 "clientX": box["x"] + 20, "clientY": box["y"] + box["height"] / 2}
+        # A long press that ends with no click, as in Chrome on Android.
+        row.dispatch_event("pointerdown", point)
+        page.wait_for_selector("#context-menu:not([hidden])")
+        page.evaluate("(p) => window.dispatchEvent(new PointerEvent('pointercancel', p))", point)
+        page.tap('#context-menu button:text-is("Highlight this family")')
+        self.assertTrue(page.is_hidden("#context-menu"))
+        self.assertEqual(self.state(page, "highlights"), ["grok-4-7"])
 
     def test_escape_priority_chain(self):
         page = self.open()

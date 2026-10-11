@@ -1412,12 +1412,6 @@ function labMark(lab, labName, size) {
 let rendering = false;
 const byKey = (root, key) => root.querySelector(`[data-key="${CSS.escape(key)}"]`);
 
-/** Focus an element without the focus handlers treating it as hover or row focus. */
-function quietFocus(el) {
-  rendering = true;
-  try { el.focus({ preventScroll: true }); } finally { rendering = false; }
-}
-
 /** Replace an element's markup, keeping keyboard focus on the element with the same data-key. */
 function setHTML(el, html) {
   if (el._html === html) return;
@@ -2115,11 +2109,18 @@ function setFocusFamily(family) {
   state.focusFamily = family;
   renderChart();
 }
-const rowFamily = (target) => target.closest?.(".model-row")?.dataset.family ?? null;
+const rowFamily = (target) => target?.closest?.(".model-row")?.dataset.family ?? null;
 els.groups.addEventListener("pointerover", (e) => {
-  if (e.pointerType === "mouse" && !state.menu) setFocusFamily(rowFamily(e.target));
+  const family = rowFamily(e.target);
+  if (e.pointerType === "mouse" && family) setFocusFamily(family);
 });
-els.groups.addEventListener("pointerleave", () => setFocusFamily(null));
+// Leaving a row ends its emphasis, unless the row keeps keyboard focus. Moving onto another
+// row is handled by that row's pointerover.
+els.groups.addEventListener("pointerout", (e) => {
+  const row = e.target.closest?.(".model-row");
+  if (e.pointerType !== "mouse" || !row || row.contains(e.relatedTarget) || rowFamily(e.relatedTarget)) return;
+  setFocusFamily(row.matches(":focus-visible") ? row.dataset.family : null);
+});
 els.groups.addEventListener("focusin", (e) => {
   if (!rendering && e.target.matches(".model-row:focus-visible")) setFocusFamily(rowFamily(e.target));
 });
@@ -2166,11 +2167,33 @@ function toggleHighlight(family) {
     ? state.highlights.filter((f) => f !== family) : [...state.highlights, family];
   renderChart();
 }
-// While the context menu is open, the pointer does not hover the chart or the rows.
-els.svg.addEventListener("pointerover", (e) => { if (!state.menu) setHover(pointOf(e.target), labelOf(e.target)); });
-els.svg.addEventListener("pointerleave", () => setHover(null, null));
+// Every redraw replaces the SVG nodes, and the browser then sends pointerover events for
+// the nodes under a resting cursor. Hover changes only when the mouse has moved and reached
+// a different point or label, so those events cannot undo keyboard focus, Escape or an unpin.
+let pointerHit = { id: null, family: null };  // the point or label under the mouse
+let pointerAt = "";                            // client position of the last pointer event
+window.addEventListener("pointermove", (e) => { pointerAt = e.clientX + "," + e.clientY; }, true);
+els.svg.addEventListener("pointerover", (e) => {
+  // A touch or pen tap must not redraw: that would detach the node it is about to press.
+  if (e.pointerType !== "mouse") return;
+  const at = e.clientX + "," + e.clientY, moved = at !== pointerAt;
+  pointerAt = at;
+  const id = pointOf(e.target), family = labelOf(e.target);
+  if (!moved || (id === pointerHit.id && family === pointerHit.family)) return;
+  pointerHit = { id, family };
+  setHover(id, family);
+});
+els.svg.addEventListener("pointerleave", (e) => {
+  if (e.pointerType !== "mouse") return;
+  const wasOver = pointerHit.id || pointerHit.family;
+  pointerHit = { id: null, family: null };
+  if (wasOver) setHover(null, null);
+});
 // Focus listeners sit on the canvas: Chromium makes an <svg> with focus listeners click-focusable.
-els.canvas.addEventListener("focusin", (e) => { if (!rendering) setHover(pointOf(e.target), labelOf(e.target)); });
+// Focus from a tap is not hover; the tap itself pins or highlights.
+els.canvas.addEventListener("focusin", (e) => {
+  if (!rendering && lastInput !== "touch" && lastInput !== "pen") setHover(pointOf(e.target), labelOf(e.target));
+});
 els.canvas.addEventListener("focusout", (e) => {
   if (!rendering && !els.svg.contains(e.relatedTarget)) setHover(null, null);
 });
@@ -2277,8 +2300,8 @@ function closeMenu(restoreFocus = true) {
   state.menu = null;
   renderMenu();
   const origin = restoreFocus && m.originKey != null ? byKey(document, m.originKey) : null;
-  // After a mouse right-click, focusing a point must not leave it looking hovered.
-  if (origin) (m.keyboard ? origin.focus({ preventScroll: true }) : quietFocus(origin));
+  // A refocused point or label shows its details, as focus does anywhere on the chart.
+  if (origin) origin.focus({ preventScroll: true });
 }
 
 function onContextMenu(e) {
@@ -2332,7 +2355,6 @@ const touchPress = { timer: 0, x: 0, y: 0, swallowClick: false };
 const LONG_PRESS = { ms: CONFIG.longPressMs, slop: 10 };
 function cancelLongPress() { clearTimeout(touchPress.timer); touchPress.timer = 0; }
 function startLongPress(e) {
-  touchPress.swallowClick = false;
   cancelLongPress();
   if (e.pointerType === "mouse" || menuTarget(e.target) === undefined) return;
   const { target, clientX, clientY } = e;
@@ -2350,6 +2372,9 @@ window.addEventListener("pointermove", (e) => {
 });
 window.addEventListener("pointerup", cancelLongPress);
 window.addEventListener("pointercancel", cancelLongPress);
+// Some browsers (Chrome on Android) send no click after a long press. The trailing click,
+// when there is one, comes before the next press, so a new press ends the swallowing.
+window.addEventListener("pointerdown", () => { touchPress.swallowClick = false; }, true);
 window.addEventListener("click", (e) => {
   if (!touchPress.swallowClick) return;
   touchPress.swallowClick = false;
