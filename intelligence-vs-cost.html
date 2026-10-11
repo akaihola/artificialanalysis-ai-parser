@@ -16,6 +16,7 @@
       theme = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
     }
     document.documentElement.dataset.theme = theme;
+    document.querySelector('meta[name="theme-color"]').content = theme === "light" ? "#ffffff" : "#000000";
   })();
 </script>
 <style>
@@ -1268,7 +1269,11 @@ const URL_KEYS = {
   linear: "linear", labels: "labels", maxTime: "max_response_time", deprecated: "deprecated",
 };
 const sameSet = (a, b) => a.length === b.length && a.every((x) => b.includes(x));
-const parseBool = (v) => v.toLowerCase() === "true";
+/** "true" or "false" in any case; anything else is null. */
+function parseBool(v) {
+  const s = String(v).toLowerCase();
+  return s === "true" ? true : s === "false" ? false : null;
+}
 const parseList = (v, known) => [...new Set(v.split(",").filter((x) => known.has(x)))];
 
 /**
@@ -1287,11 +1292,9 @@ function decodeUrl(search, known) {
   const selected = models ? parseList(models, known.families) : [];
   out.selected = models === "" || selected.length ? selected : [...d.selected];
   const hide = get(URL_KEYS.excluded);
-  out.excluded = hide == null ? [...d.excluded] : parseList(hide, known.efforts);
-  for (const key of ["frontier", "linear", "labels", "deprecated"]) {
-    const v = get(URL_KEYS[key]);
-    out[key] = v == null ? d[key] : parseBool(v);
-  }
+  const excluded = hide ? parseList(hide, known.efforts) : [];
+  out.excluded = hide === "" || excluded.length ? excluded : [...d.excluded];
+  for (const key of ["frontier", "linear", "labels", "deprecated"]) out[key] = parseBool(get(URL_KEYS[key])) ?? d[key];
   out.plans = {};
   for (const group of CONFIG.plans) {
     const id = get(group.urlKey);
@@ -1766,7 +1769,7 @@ function renderEmpty(m, show) {
   const tab = m.metric.tab;
   let title;
   if (!state.selected.length) title = "No models selected";
-  else if (!m.base.length) title = state.excluded.length ? "No reasoning levels enabled" : "No models to show";
+  else if (!m.base.length) title = effortLevels(state.data, state).length ? "No reasoning levels enabled" : "No models to show";
   else if (!m.rows.length) title = `No ${tab} data for the selected models`;
   else title = `Only ${m.rows.length} selected model${m.rows.length === 1 ? " has" : "s have"} ${tab} data`;
   els.emptyTitle.textContent = title;
@@ -2368,9 +2371,13 @@ function handleEscape(target) {
   if (state.sheetOpen && state.compact) { setSheet(false, true); return true; }
   if (state.query) return clearSearch();
   if (state.pinned || state.hovered || state.labelHover || state.highlights.length) {
+    // A pin or highlight the chart does not show (hidden family, table view) is cleared
+    // without using up the key press.
+    const m = lastChart;
+    const shown = !!m && !!(m.pinned || m.hovered || state.labelHover || m.visible.some((r) => m.highlights.has(r.family)));
     Object.assign(state, { pinned: null, hovered: null, labelHover: null, highlights: [] });
     renderChart();
-    return true;
+    if (shown) return true;
   }
   if (state.fallbackFullscreen) { setFallbackFullscreen(false); return true; }
   return false;

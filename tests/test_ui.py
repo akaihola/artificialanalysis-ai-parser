@@ -1,0 +1,1004 @@
+"""Browser tests for intelligence-vs-cost.html, in Chromium and Firefox.
+
+The tests serve the repository with http.server on a free port and replace models.json
+with the small fixture below, except for one smoke test that loads the real file.
+
+    uv run --with "$(grep -E '^playwright[=<>~!]' "$UV_CONSTRAINT")" \
+        python3 -m unittest discover -s tests -v
+
+Without Playwright installed the tests are skipped.
+"""
+import functools
+import http.server
+import json
+import re
+import threading
+import unittest
+from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
+
+try:
+    from playwright.sync_api import sync_playwright
+except ImportError:  # the parser tests still run
+    sync_playwright = None
+
+ROOT = Path(__file__).resolve().parents[1]
+DESKTOP = {"width": 1440, "height": 900}
+MOBILE = {"width": 390, "height": 844}
+EFFORT_ORDER = {"none": 0, "minimal": 10, "low": 20, "medium": 30, "default": 35, "high": 40, "xhigh": 50, "max": 60}
+DEFAULT_FAMILIES = {"gpt-6-astra", "gpt-6-1-sol", "gpt-6-luna", "claude-opus-5-5",
+                    "claude-fable-5-1", "claude-haiku-5-5", "gemini-4-argon", "grok-4-7"}
+
+
+def livebench(source, coding=(2, 2), agentic=(3, 3)):
+    subtasks = {}
+    if coding:
+        subtasks["livebench_coding"] = {"completed": coding[0], "expected": coding[1]}
+    if agentic:
+        subtasks["livebench_agentic_coding"] = {"completed": agentic[0], "expected": agentic[1]}
+    return {"source_model": source, "release": "2026_06_25", "subtasks": subtasks}
+
+
+def variant(slug, family, family_name, lab, lab_name, effort, score, cost, time, *,
+            speed=100.0, released="2026-09-01", **extra):
+    """One models.json row. SciCode is the intelligence score minus 10."""
+    return {
+        "name": f"{family_name} ({effort})", "creator": lab_name, "provider": lab_name, "slug": slug,
+        "family": family, "family_name": family_name, "lab": lab, "lab_name": lab_name,
+        "released": released, "effort": effort, "effort_order": EFFORT_ORDER[effort],
+        "intelligence_index": score, "coding_index": score - 10, "math_index": None,
+        "terminalbench_v4_0": None, "cost_per_task": cost, "e2e_response_time_s": time,
+        "output_tokens_per_second": speed, "reasoning": effort != "none", "open_weights": False,
+        "deprecated": False, "livebench_coding": None, "livebench_agentic_coding": None,
+        "livebench": None, **extra,
+    }
+
+
+ANTHROPIC = ("anthropic", "Anthropic")
+OPENAI = ("openai", "OpenAI")
+# Eight default families plus a Medium-tier extra, two Notable families, an open-weights
+# OpenAI family, a lab without a logo, a deprecated family and two unplottable rows.
+MODELS = [
+    variant("claude-opus-5-5-high", "claude-opus-5-5", "Claude Opus 5.5", *ANTHROPIC, "high", 56, 2.0, 300,
+            speed=90.0, released="2026-09-22"),
+    variant("claude-opus-5-5", "claude-opus-5-5", "Claude Opus 5.5", *ANTHROPIC, "max", 58, 6.0, 600,
+            speed=96.0, released="2026-09-22"),
+    variant("claude-fable-5-1", "claude-fable-5-1", "Claude Fable 5.1", *ANTHROPIC, "default", 54, 4.0, 200,
+            released="2026-08-01"),
+    variant("claude-sonnet-5-5", "claude-sonnet-5-5", "Claude Sonnet 5.5", *ANTHROPIC, "high", 52, 1.0, 100,
+            released="2026-09-10"),
+    variant("claude-haiku-5-5-non-reasoning", "claude-haiku-5-5", "Claude Haiku 5.5", *ANTHROPIC, "none",
+            30, 0.004, 5),
+    variant("claude-haiku-5-5", "claude-haiku-5-5", "Claude Haiku 5.5", *ANTHROPIC, "low", 40, 0.2, 20),
+    variant("claude-sonnet-5-high", "claude-sonnet-5", "Claude Sonnet 5", *ANTHROPIC, "high", 44, 0.9, 110,
+            released="2026-03-01", deprecated=True),
+    variant("claude-sonnet-5", "claude-sonnet-5", "Claude Sonnet 5", *ANTHROPIC, "max", 49, 2.5, 250,
+            released="2026-03-01", deprecated=True),
+    variant("gpt-6-astra-medium", "gpt-6-astra", "GPT-6 Astra", *OPENAI, "medium", 50, 1.5, 150,
+            livebench_coding=70.0, livebench=livebench("gpt-6-astra-medium", coding=(1, 2), agentic=None)),
+    variant("gpt-6-astra", "gpt-6-astra", "GPT-6 Astra", *OPENAI, "max", 57, 3.0, 400,
+            livebench_coding=80.5, livebench_agentic_coding=57.3, livebench=livebench("gpt-6-astra-max")),
+    variant("gpt-6-1-sol-xhigh", "gpt-6-1-sol", "GPT-6.1 Sol", *OPENAI, "xhigh", 53, 0.8, 120,
+            released="2026-09-15"),
+    variant("gpt-6-luna", "gpt-6-luna", "GPT-6 Luna", *OPENAI, "low", 45, 0.05, None, speed=None),
+    variant("gpt-oss-120b", "gpt-oss-120b", "gpt-oss-120B", *OPENAI, "high", 35, 0.02, 10, open_weights=True),
+    variant("gpt-oss-120b-low", "gpt-oss-120b", "gpt-oss-120B", *OPENAI, "low", 30, 0.0085, 8,
+            open_weights=True),
+    variant("gemini-4-argon", "gemini-4-argon", "Gemini 4 Argon", "google", "Google", "default", 55, 1.2, 90),
+    variant("grok-4-7", "grok-4-7", "Grok 4.7", "xai", "xAI", "default", 48, 0.6, 60),
+    variant("deepseek-v4-pro", "deepseek-v4-pro", "DeepSeek V4 Pro", "deepseek", "DeepSeek", "default",
+            47, 0.1, 80, open_weights=True, livebench_coding=60.0, livebench=livebench("deepseek-v4-pro", agentic=None)),
+    variant("kimi-k3", "kimi-k3", "Kimi K3", "kimi", "Kimi", "default", 46, 0.3, 70, open_weights=True,
+            livebench_coding=65.0, livebench=livebench("kimi-k3", agentic=None)),
+    variant("mistral-large-4", "mistral-large-4", "Mistral Large 4", "mistral", "Mistral", "none", 38, 0.15, 15),
+    variant("free-model", "free-model", "Free Model", "acme", "Acme", "none", 20, 0, 1),
+    variant("no-cost-model", "no-cost-model", "No Cost Model", "acme", "Acme", "none", 25, None, 2),
+]
+# Visible by default: the default families without the Non-reasoning variant.
+DEFAULT_POINTS = {"claude-opus-5-5-high", "claude-opus-5-5", "claude-fable-5-1", "claude-haiku-5-5",
+                  "gpt-6-astra-medium", "gpt-6-astra", "gpt-6-1-sol-xhigh", "gpt-6-luna",
+                  "gemini-4-argon", "grok-4-7"}
+DEFAULT_PARETO = {"gpt-6-luna", "grok-4-7", "gpt-6-1-sol-xhigh", "gemini-4-argon",
+                  "claude-opus-5-5-high", "gpt-6-astra", "claude-opus-5-5"}
+
+
+class QuietHandler(http.server.SimpleHTTPRequestHandler):
+    def log_message(self, format, *args):
+        pass
+
+
+_server = None
+_playwright = None
+
+
+def setUpModule():
+    global _server, _playwright
+    if sync_playwright is None:
+        return
+    handler = functools.partial(QuietHandler, directory=str(ROOT))
+    _server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+    threading.Thread(target=_server.serve_forever, daemon=True).start()
+    _playwright = sync_playwright().start()
+
+
+def tearDownModule():
+    if _playwright:
+        _playwright.stop()
+    if _server:
+        _server.shutdown()
+        _server.server_close()
+
+
+def query(page):
+    """The page URL's query as {key: value}."""
+    return {k: v[0] for k, v in parse_qs(urlsplit(page.url).query, keep_blank_values=True).items()}
+
+
+class PageTests(unittest.TestCase):
+    """Every test runs once per browser through the subclasses at the bottom."""
+
+    browser_name = ""
+
+    @classmethod
+    def setUpClass(cls):
+        assert _playwright is not None and _server is not None
+        cls.browser = getattr(_playwright, cls.browser_name).launch()
+        cls.base = f"http://127.0.0.1:{_server.server_address[1]}/intelligence-vs-cost.html"
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.browser.close()
+
+    # ---------- Helpers ----------
+    def open(self, search="", *, models=MODELS, viewport=DESKTOP, color_scheme="dark", has_touch=False):
+        """A fresh context and page, loaded and drawn. Console errors fail the test."""
+        context = self.browser.new_context(viewport=viewport, color_scheme=color_scheme, has_touch=has_touch)
+        self.addCleanup(context.close)
+        context.set_default_timeout(5000)
+        # The page loads DM Sans from Google Fonts; the tests use the fallback font offline.
+        context.route(re.compile(r"^https://fonts\.(googleapis|gstatic)\.com/"),
+                      lambda route: route.fulfill(status=200, content_type="text/css", body=""))
+        if models is not None:
+            body = json.dumps(models)
+            context.route("**/models.json",
+                          lambda route: route.fulfill(status=200, content_type="application/json", body=body))
+        page = context.new_page()
+        errors = []
+        page.on("console", lambda m: errors.append(f"console.{m.type}: {m.text}") if m.type == "error" else None)
+        page.on("pageerror", lambda e: errors.append(f"pageerror: {e}"))
+        self.addCleanup(lambda: self.assertEqual(errors, [], "console errors"))
+        page.goto(self.base + search)
+        self.ready(page)
+        return page
+
+    @staticmethod
+    def ready(page):
+        page.wait_for_function("() => window.__chart && window.__chart.state.data")
+        # Let the ResizeObserver redraw at the measured size.
+        page.evaluate("() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))")
+
+    @staticmethod
+    def state(page, expr):
+        return page.evaluate(f"() => __chart.state.{expr}")
+
+    @staticmethod
+    def points(page):
+        return set(page.eval_on_selector_all("#chart [data-id]", "els => els.map((e) => e.dataset.id)"))
+
+    @staticmethod
+    def rows(page, selector=".model-row"):
+        """Sidebar rows as (family, pressed) in sidebar order."""
+        return page.eval_on_selector_all(
+            selector, "els => els.map((e) => [e.dataset.family, e.getAttribute('aria-pressed') === 'true'])")
+
+    @staticmethod
+    def texts(page, selector):
+        return page.eval_on_selector_all(selector, "els => els.map((e) => e.textContent.trim())")
+
+    @staticmethod
+    def ticks(page):
+        """Axis tick labels: (Y ticks, X ticks)."""
+        y = page.eval_on_selector_all('#chart g[transform^="translate(0 "] text', "els => els.map((e) => e.textContent)")
+        x = page.eval_on_selector_all('#chart g[transform] > line[y2="5"] + text', "els => els.map((e) => e.textContent)")
+        return y, x
+
+    @staticmethod
+    def svg_texts(page):
+        return page.eval_on_selector_all("#chart text", "els => els.map((e) => e.textContent)")
+
+    @staticmethod
+    def set_slider(page, value):
+        page.eval_on_selector("#time-slider", """(el, v) => {
+            el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); }""", value)
+
+    @staticmethod
+    def tooltip_rows(page):
+        """Single-variant tooltip rows as (label, value, note)."""
+        return page.eval_on_selector_all("#tooltip .tooltip-value", """els => els.map((e) => [
+            e.querySelector('span').textContent, e.querySelector('b').firstChild.textContent,
+            e.querySelector('small')?.textContent ?? null])""")
+
+    @staticmethod
+    def table(page):
+        """Table view body as {"Name (effort)": [[cell text, note or None], ...]}."""
+        return page.evaluate("""() => Object.fromEntries([...document.querySelectorAll('#data-table tbody tr')]
+            .map((tr) => [tr.querySelector('th').textContent.trim() + ' (' + tr.querySelector('td.effort').textContent + ')',
+                [...tr.querySelectorAll('td')].map((td) => [td.firstChild?.textContent ?? '',
+                  td.querySelector('small')?.textContent ?? null])]))""")
+
+    # ---------- Load ----------
+    def test_default_render(self):
+        page = self.open()
+        self.assertEqual(page.title(), "Intelligence vs cost")
+        self.assertEqual(page.text_content("#chart-title"), "Cost vs intelligence")
+        self.assertEqual(query(page), {})
+        self.assertEqual(self.points(page), DEFAULT_POINTS)
+        self.assertEqual(page.text_content("#model-count"), "8")
+        self.assertEqual({f for f, on in self.rows(page) if on}, DEFAULT_FAMILIES)
+        self.assertEqual(self.texts(page, "#metric-tabs button"),
+                         ["Intelligence", "Coding (SciCode)", "Math (AIME 2025)", "Terminal-Bench v4.0",
+                          "LiveBench Coding", "LiveBench Agentic Coding"])
+        self.assertEqual(page.get_attribute('#metric-tabs [data-key="intelligence_index"]', "aria-current"), "true")
+        texts = self.svg_texts(page)
+        self.assertIn("Intelligence index", texts)
+        self.assertIn("Cost per task (USD, log scale)", texts)
+        self.assertNotRegex(page.inner_html("#chart"), r"NaN|Infinity")
+        # One label per visible family, with lab logos or a monogram.
+        self.assertEqual(set(page.eval_on_selector_all(".series-label", "els => els.map((e) => e.dataset.label)")),
+                         DEFAULT_FAMILIES)
+        self.assertEqual(page.locator('.series-label[data-label="claude-opus-5-5"] use').get_attribute("href"),
+                         "#logo-anthropic")
+        # Families without a positive cost are not plottable and never listed.
+        page.click("#show-all")
+        page.click("#open-weights")
+        listed = {f for f, _ in self.rows(page)}
+        self.assertIn("gpt-oss-120b", listed)
+        self.assertFalse({"free-model", "no-cost-model"} & listed)
+        self.assertTrue(page.is_hidden("#empty-state"))
+        self.assertTrue(page.is_hidden("#tooltip"))
+
+    def test_real_models_json_smoke(self):
+        page = self.open(models=None)
+        self.assertEqual(page.text_content("#model-count"), "8")
+        self.assertGreater(len(self.points(page)), 8)
+        self.assertGreater(page.locator(".series-label").count(), 0)
+        for tab in self.texts(page, "#metric-tabs button"):
+            page.click(f'#metric-tabs button:text-is("{tab}")')
+            chart = page.inner_html("#chart")
+            self.assertNotRegex(chart, r"NaN|Infinity|undefined")
+            if page.is_hidden("#empty-state"):
+                self.assertGreater(len(self.points(page)), 2, tab)
+            else:
+                page.click("#empty-action")
+                self.assertGreater(len(self.points(page)), 0, tab)
+        page.click("#table-button")
+        self.assertGreater(page.locator("#data-table tbody tr").count(), 2)
+
+    # ---------- Header and toolbar ----------
+    def test_benchmark_tabs_change_title_and_url(self):
+        page = self.open()
+        page.click('#metric-tabs [data-key="coding_index"]')
+        self.assertEqual(page.text_content("#chart-title"), "Cost vs SciCode")
+        self.assertIn("SciCode score", self.svg_texts(page))
+        self.assertNotIn("Intelligence index", self.svg_texts(page))
+        self.assertEqual(query(page), {"metric": "coding_index"})
+        self.assertEqual(page.get_attribute('#metric-tabs [data-key="coding_index"]', "aria-current"), "true")
+        self.assertEqual(page.get_attribute('#metric-tabs [data-key="intelligence_index"]', "aria-current"), "false")
+        # The label anchor and crosshair follow the benchmark: SciCode is the score minus 10.
+        page.hover('#chart [data-id="claude-opus-5-5"]')
+        self.assertEqual(self.tooltip_rows(page)[0][:2], ["SciCode score", "48"])
+
+        # LiveBench Coding: only two default variants have data, so the empty state offers more.
+        page.click('#metric-tabs [data-key="livebench_coding"]')
+        self.assertEqual(query(page), {"metric": "livebench_coding"})
+        self.assertTrue(page.is_visible("#empty-state"))
+        self.assertEqual(page.text_content("#empty-title"), "Only 2 selected models have LiveBench Coding data")
+        self.assertEqual(page.text_content("#empty-action"), "Show models with LiveBench Coding data")
+        page.click("#empty-action")
+        self.assertTrue(page.is_hidden("#empty-state"))
+        self.assertEqual(self.points(page), {"gpt-6-astra-medium", "gpt-6-astra", "deepseek-v4-pro", "kimi-k3"})
+        self.assertIn("LiveBench Coding score", self.svg_texts(page))
+        self.assertEqual(set(query(page)["models"].split(",")), DEFAULT_FAMILIES | {"deepseek-v4-pro", "kimi-k3"})
+        # LiveBench provenance under the score.
+        page.hover('#chart [data-id="gpt-6-astra"]')
+        self.assertEqual(self.tooltip_rows(page)[0],
+                         ["LiveBench Coding score", "80.5", "2026_06_25 · gpt-6-astra-max · 2/2 subtasks"])
+        page.hover('#chart [data-id="gpt-6-astra-medium"]')
+        self.assertEqual(self.tooltip_rows(page)[0][2], "2026_06_25 · gpt-6-astra-medium · 1/2 subtasks")
+
+        page.click('#metric-tabs [data-key="intelligence_index"]')
+        self.assertEqual(page.text_content("#chart-title"), "Cost vs intelligence")
+        self.assertNotIn("metric", query(page))
+
+    def test_plan_selectors_change_effective_cost(self):
+        page = self.open("?models=claude-opus-5-5,gpt-6-astra,gpt-oss-120b,grok-4-7")
+        page.click("#table-button")
+        api = self.table(page)
+        self.assertEqual(api["Claude Opus 5.5 (max)"][-3], ["$6.00", None])
+        self.assertEqual(self.texts(page, "#data-table thead th")[-3], "Cost per task")
+
+        page.click('#plan-sections [data-plan="claude-max-20x"]')
+        self.assertEqual(query(page)["claude_plan"], "claude-max-20x")
+        self.assertEqual(page.get_attribute('[data-plan="claude-max-20x"]', "aria-pressed"), "true")
+        self.assertEqual(self.texts(page, "#data-table thead th")[-3], "Effective cost per task")
+        table = self.table(page)
+        # Max 20x: $200 a month for $4,000 of API usage, so 1/20 of the API cost.
+        self.assertEqual(table["Claude Opus 5.5 (max)"][-3], ["$0.30", "API $6.00"])
+        self.assertEqual(table["Claude Opus 5.5 (high)"][-3], ["$0.10", "API $2.00"])
+        self.assertEqual(table["GPT-6 Astra (max)"][-3], ["$3.00", None])
+        self.assertEqual(table["Grok 4.7 (Default)"][-3], ["$0.60", None])
+
+        page.click('#plan-sections [data-plan="chatgpt-plus"]')
+        self.assertEqual(query(page)["codex_plan"], "chatgpt-plus")
+        table = self.table(page)
+        # Plus: $20 for $100 of usage. gpt-oss is open weights and keeps the API price.
+        self.assertEqual(table["GPT-6 Astra (max)"][-3], ["$0.60", "API $3.00"])
+        self.assertEqual(table["gpt-oss-120B (high)"][-3], ["$0.02", None])
+        self.assertEqual(table["gpt-oss-120B (low)"][-3], ["$0.0085", None])
+        self.assertEqual(table["Grok 4.7 (Default)"][-3], ["$0.60", None])
+
+        page.click("#table-button")
+        self.assertIn("Effective cost per task (USD, log scale)", self.svg_texts(page))
+        page.hover('#chart [data-id="claude-opus-5-5"]')
+        rows = self.tooltip_rows(page)
+        self.assertEqual(rows[1][:2], ["Cost per task (Claude Max 20x)", "$0.30"])
+        self.assertEqual(rows[2][:2], ["API cost per task", "$6.00"])
+        page.hover('#chart [data-id="grok-4-7"]')
+        self.assertEqual([r[0] for r in self.tooltip_rows(page)],
+                         ["Intelligence index", "Cost per task", "Response time", "Output speed"])
+
+        page.click('#plan-sections [data-plan="claude-api"]')
+        page.click('#plan-sections [data-plan="chatgpt-api"]')
+        self.assertFalse({"claude_plan", "codex_plan"} & query(page).keys())
+        self.assertIn("Cost per task (USD, log scale)", self.svg_texts(page))
+
+    def test_speed_slider_hides_models_into_ghost_dots(self):
+        page = self.open()
+        self.assertEqual(page.text_content("#time-readout"), "No limit")
+        before = self.ticks(page)
+        # The slider runs from 5 s to 600 s on a log scale; step 125 of 200 is 100 s.
+        self.set_slider(page, 125)
+        self.assertEqual(page.text_content("#time-readout"), "≤ 100 s · 6 hidden")
+        self.assertEqual(page.get_attribute("#time-slider", "aria-valuetext"), "≤ 100 s · 6 hidden")
+        self.assertEqual(query(page), {"max_response_time": "100"})
+        # GPT-6 Luna has no measured response time and stays.
+        self.assertEqual(self.points(page), {"gpt-6-luna", "claude-haiku-5-5", "grok-4-7", "gemini-4-argon"})
+        ghosts = page.locator("#chart .ghosts circle")
+        self.assertEqual(ghosts.count(), 6)
+        self.assertEqual(page.get_attribute("#chart .ghosts", "pointer-events"), "none")
+        self.assertEqual(page.get_attribute("#chart .ghosts", "opacity"), ".15")
+        # Ghosts get no label and no line; the Pareto line uses the remaining variants.
+        self.assertEqual(set(page.eval_on_selector_all(".series-label", "els => els.map((e) => e.dataset.label)")),
+                         {"gpt-6-luna", "claude-haiku-5-5", "grok-4-7", "gemini-4-argon"})
+        self.assertEqual(page.locator('#chart g[data-family="claude-opus-5-5"]').count(), 0)
+        pareto = page.get_attribute('#chart path[stroke-dasharray="6 5"]', "d")
+        self.assertEqual(pareto.count("L"), 2)  # Luna, Grok, Gemini
+        # The axes stay still while the slider moves.
+        self.assertEqual(self.ticks(page), before)
+
+        self.set_slider(page, 200)
+        self.assertEqual(page.text_content("#time-readout"), "No limit")
+        self.assertEqual(query(page), {})
+        self.assertEqual(page.locator("#chart .ghosts").count(), 0)
+        self.assertEqual(self.points(page), DEFAULT_POINTS)
+
+    def test_pareto_line_toggle(self):
+        page = self.open()
+        self.assertEqual(page.get_attribute("#pareto-toggle", "aria-pressed"), "true")
+        self.assertEqual(page.locator('#chart path[stroke-dasharray="6 5"]').count(), 1)
+        on_front = page.eval_on_selector_all('#chart [data-id] circle:last-child[stroke-width="1.5"]',
+                                             "els => els.map((e) => e.parentElement.dataset.id)")
+        self.assertEqual(set(on_front), DEFAULT_PARETO)
+        # Sidebar rows show whether their family reaches the line.
+        rows = dict(page.eval_on_selector_all(".model-row[aria-pressed=true]",
+                                              "els => els.map((e) => [e.dataset.family, e.className])"))
+        self.assertIn("on-frontier", rows["claude-opus-5-5"])
+        self.assertIn("off-frontier", rows["claude-fable-5-1"])
+
+        page.click("#pareto-toggle")
+        self.assertEqual(query(page), {"frontier": "false"})
+        self.assertEqual(page.get_attribute("#pareto-toggle", "aria-pressed"), "false")
+        self.assertEqual(page.locator('#chart path[stroke-dasharray="6 5"]').count(), 0)
+        self.assertEqual(page.locator(".model-row.on-frontier, .model-row.off-frontier").count(), 0)
+        page.click("#pareto-toggle")
+        self.assertEqual(query(page), {})
+        self.assertEqual(page.locator('#chart path[stroke-dasharray="6 5"]').count(), 1)
+
+    def test_log_and_linear_scale(self):
+        page = self.open()
+        self.assertEqual(page.get_attribute("#scale-log", "aria-pressed"), "true")
+        self.assertEqual(self.ticks(page)[1], ["$0.05", "$0.1", "$0.2", "$0.5", "$1", "$2", "$5"])
+        page.click("#scale-linear")
+        self.assertEqual(query(page), {"linear": "true"})
+        self.assertEqual(page.get_attribute("#scale-linear", "aria-pressed"), "true")
+        self.assertEqual(page.get_attribute("#scale-log", "aria-pressed"), "false")
+        self.assertIn("Cost per task (USD)", self.svg_texts(page))
+        self.assertEqual(self.ticks(page)[1], ["$0", "$2", "$4", "$6"])
+        page.click("#scale-log")
+        self.assertEqual(query(page), {})
+        self.assertIn("Cost per task (USD, log scale)", self.svg_texts(page))
+
+    def test_zoom_y_needs_the_pareto_line(self):
+        page = self.open()
+        self.assertTrue(page.is_enabled("#zoom-toggle"))
+        self.assertEqual(self.ticks(page)[0], ["20", "30", "40", "50", "60"])
+        page.click("#zoom-toggle")
+        self.assertEqual(page.get_attribute("#zoom-toggle", "aria-pressed"), "true")
+        # Fitted to the Pareto variants (45 to 58), without the default 30/50 clamps.
+        self.assertEqual(self.ticks(page)[0], ["40", "45", "50", "55", "60"])
+        self.assertEqual(page.locator("#plot-clip").count(), 1)
+        self.assertEqual(query(page), {})  # session only
+
+        page.click("#pareto-toggle")
+        self.assertTrue(page.is_disabled("#zoom-toggle"))
+        self.assertEqual(page.get_attribute("#zoom-toggle", "aria-pressed"), "false")
+        self.assertEqual(self.ticks(page)[0], ["20", "30", "40", "50", "60"])
+
+    def test_show_deprecated(self):
+        page = self.open("?models=claude-opus-5-5,claude-sonnet-5,grok-4-7")
+        self.assertEqual(page.get_attribute("#deprecated-toggle", "aria-pressed"), "false")
+        self.assertEqual(self.points(page), {"claude-opus-5-5-high", "claude-opus-5-5", "grok-4-7"})
+        self.assertNotIn("claude-sonnet-5", [f for f, _ in self.rows(page)])
+        page.fill("#model-search", "sonnet")
+        self.assertEqual([f for f, _ in self.rows(page)], ["claude-sonnet-5-5"])
+        page.fill("#model-search", "")
+
+        page.click("#deprecated-toggle")
+        self.assertEqual(query(page)["deprecated"], "true")
+        self.assertEqual(page.get_attribute("#deprecated-toggle", "aria-pressed"), "true")
+        self.assertTrue({"claude-sonnet-5-high", "claude-sonnet-5"} <= self.points(page))
+        # Drawn dashed and listed in the sidebar (Other, because it is selected).
+        self.assertEqual(page.get_attribute('#chart g[data-family="claude-sonnet-5"] > path', "stroke-dasharray"), "5 5")
+        self.assertIsNone(page.get_attribute('#chart g[data-family="claude-opus-5-5"] > path', "stroke-dasharray"))
+        self.assertIn(["claude-sonnet-5", True], self.rows(page, '.model-section[aria-label="Other"] .model-row'))
+        page.fill("#model-search", "sonnet")
+        self.assertEqual({f for f, _ in self.rows(page)}, {"claude-sonnet-5-5", "claude-sonnet-5"})
+        page.fill("#model-search", "")
+
+        page.click("#deprecated-toggle")
+        self.assertNotIn("deprecated", query(page))
+        self.assertNotIn("claude-sonnet-5", self.points(page))
+
+        # A selection of only hidden deprecated families says so, not "no reasoning levels".
+        page = self.open("?models=claude-sonnet-5")
+        self.assertEqual(page.text_content("#empty-title"), "No models to show")
+        self.assertEqual(self.texts(page, "#effort-buttons button"), [])
+        page.click("#deprecated-toggle")
+        self.assertEqual(page.text_content("#empty-title"), "Only 2 selected models have Intelligence data")
+
+    # ---------- Sidebar ----------
+    def test_search(self):
+        page = self.open()
+        page.keyboard.press("/")
+        self.assertEqual(page.evaluate("document.activeElement.id"), "model-search")
+        page.keyboard.type("gem")
+        self.assertEqual(self.texts(page, ".model-section h3"), ["Results"])
+        self.assertEqual(self.rows(page), [["gemini-4-argon", True]])
+        self.assertTrue(page.is_hidden("#search-kbd"))
+        self.assertTrue(page.is_visible("#search-clear"))
+        self.assertTrue(page.is_hidden("#browse-options"))
+        self.assertNotIn("gem", page.url)  # search text is not stored
+
+        page.keyboard.press("Escape")
+        self.assertEqual(page.input_value("#model-search"), "")
+        self.assertEqual(self.texts(page, ".model-section h3"), ["Frontier", "Notable"])
+        self.assertTrue(page.is_visible("#search-kbd"))
+
+        # Lab names match too; Other families are searchable without "Show all models".
+        page.fill("#model-search", "anthropic")
+        self.assertEqual({f for f, _ in self.rows(page)},
+                         {"claude-opus-5-5", "claude-fable-5-1", "claude-sonnet-5-5", "claude-haiku-5-5"})
+        page.fill("#model-search", "mistral")
+        page.click('.model-row[data-family="mistral-large-4"]')
+        self.assertIn("mistral-large-4", query(page)["models"].split(","))
+
+        page.fill("#model-search", "zzz")
+        self.assertEqual(self.rows(page), [])
+        self.assertTrue(page.is_visible("#search-note"))
+        self.assertEqual(page.text_content("#search-note"), "No models match “zzz”.")
+        page.click("#search-clear")
+        self.assertEqual(page.input_value("#model-search"), "")
+        self.assertEqual(page.evaluate("document.activeElement.id"), "model-search")
+        self.assertTrue(page.is_hidden("#search-note"))
+        # A selected Other family stays listed.
+        self.assertIn(["mistral-large-4", True], self.rows(page, '.model-section[aria-label="Other"] .model-row'))
+
+    def test_reasoning_toggles(self):
+        page = self.open()
+        buttons = page.eval_on_selector_all("#effort-buttons button",
+                                            "els => els.map((e) => [e.textContent, e.getAttribute('aria-pressed')])")
+        self.assertEqual(buttons, [["none", "false"], ["low", "true"], ["medium", "true"], ["default", "true"],
+                                   ["high", "true"], ["xhigh", "true"], ["max", "true"]])
+        page.click('#effort-buttons [data-key="max"]')
+        self.assertEqual(query(page), {"hide-reasoning": "none,max"})
+        self.assertEqual(self.points(page), DEFAULT_POINTS - {"claude-opus-5-5", "gpt-6-astra"})
+        page.click('#effort-buttons [data-key="none"]')
+        self.assertEqual(query(page), {"hide-reasoning": "max"})
+        self.assertIn("claude-haiku-5-5-non-reasoning", self.points(page))
+        page.click('#effort-buttons [data-key="max"]')
+        self.assertEqual(query(page), {"hide-reasoning": ""})
+        page.click('#effort-buttons [data-key="none"]')
+        self.assertEqual(query(page), {})
+        # Levels come from the selected families only.
+        page.click('.model-row[data-family="claude-haiku-5-5"]')
+        self.assertNotIn("none", self.texts(page, "#effort-buttons button"))
+        enabled = page.locator('#effort-buttons [aria-pressed="true"]')
+        while enabled.count():
+            enabled.first.click()
+        self.assertEqual(page.text_content("#empty-title"), "No reasoning levels enabled")
+        self.assertEqual(self.points(page), set())
+
+    def test_tier_and_all_toggles(self):
+        page = self.open()
+        tiers = lambda: dict(page.eval_on_selector_all(
+            ".model-section [data-set]", "els => els.map((e) => [e.dataset.set, e.getAttribute('aria-pressed')])"))
+        self.assertEqual(tiers(), {"Small": "true", "Medium": "false", "Large": "true", "notable": "false"})
+        page.click('[data-set="Medium"]')
+        self.assertEqual(tiers()["Medium"], "true")
+        self.assertEqual(page.text_content("#model-count"), "9")
+        self.assertIn("claude-sonnet-5-5", query(page)["models"].split(","))
+        page.click('[data-set="Medium"]')
+        self.assertEqual(tiers()["Medium"], "false")
+        self.assertFalse({"gpt-6-1-sol", "claude-sonnet-5-5"} & set(query(page)["models"].split(",")))
+        page.click('[data-set="Large"]')
+        self.assertEqual(set(query(page)["models"].split(",")), {"gpt-6-luna", "claude-haiku-5-5"})
+        page.click('[data-set="notable"]')
+        self.assertEqual(tiers()["notable"], "true")
+        self.assertIn(["kimi-k3", True], self.rows(page, '.model-section[aria-label="Notable"] .model-row'))
+        self.assertIn(["deepseek-v4-pro", True], self.rows(page, '.model-section[aria-label="Notable"] .model-row'))
+        page.click('[data-set="notable"]')
+        self.assertEqual(set(query(page)["models"].split(",")), {"gpt-6-luna", "claude-haiku-5-5"})
+        page.click("#reset-selection")
+        self.assertEqual(query(page), {})
+        self.assertEqual(page.text_content("#model-count"), "8")
+
+    def test_show_all_models(self):
+        page = self.open()
+        self.assertEqual(self.texts(page, ".model-section h3"), ["Frontier", "Notable"])
+        self.assertTrue(page.is_hidden("#open-weights"))
+        page.click("#show-all")
+        self.assertEqual(page.text_content("#show-all"), "Hide other models")
+        self.assertEqual(page.get_attribute("#show-all", "aria-expanded"), "true")
+        other = '.model-section[aria-label="Other"] .model-row'
+        # Open weights and deprecated families stay out of the list.
+        self.assertEqual(self.rows(page, other), [["mistral-large-4", False]])
+        self.assertEqual(page.text_content(f"{other} .lab-monogram"), "M")
+        page.click("#open-weights")
+        self.assertEqual(page.get_attribute("#open-weights", "aria-pressed"), "true")
+        self.assertEqual(self.rows(page, other), [["gpt-oss-120b", False], ["mistral-large-4", False]])
+        page.click(f'{other}[data-family="gpt-oss-120b"]')
+        self.assertTrue({"gpt-oss-120b", "gpt-oss-120b-low"} <= self.points(page))
+        page.click("#show-all")
+        self.assertEqual(page.text_content("#show-all"), "Show all models")
+        self.assertEqual(self.rows(page, other), [["gpt-oss-120b", True]])
+
+    def test_context_menu_lab_show_only_and_hide(self):
+        page = self.open()
+        page.click('.model-row[data-family="claude-opus-5-5"]', button="right")
+        self.assertTrue(page.is_visible("#context-menu"))
+        self.assertEqual(page.text_content(".context-menu-title"), "Claude Opus 5.5")
+        self.assertEqual(self.texts(page, "#context-menu button"), [
+            "Hide this family", "Show only this family", "Show all except this family", "Highlight this family",
+            "Show all Anthropic", "Hide Anthropic", "Show only Anthropic", "Show all except Anthropic",
+            "Show all listed models", "Reset model selection", "Clear model selection"])
+        page.click('#context-menu button:text-is("Show only Anthropic")')
+        self.assertTrue(page.is_hidden("#context-menu"))
+        anthropic = {"claude-opus-5-5", "claude-fable-5-1", "claude-sonnet-5-5", "claude-haiku-5-5"}
+        self.assertEqual(set(query(page)["models"].split(",")), anthropic)
+        self.assertEqual({p.split("-")[0] for p in self.points(page)}, {"claude"})
+
+        # The same menu on a chart point.
+        page.click('#chart [data-id="claude-sonnet-5-5"]', button="right")
+        self.assertEqual(page.text_content(".context-menu-title"), "Claude Sonnet 5.5")
+        page.click('#context-menu button:text-is("Hide Anthropic")')
+        self.assertEqual(query(page)["models"], "")
+        self.assertEqual(page.text_content("#empty-title"), "No models selected")
+        self.assertEqual(self.points(page), set())
+
+        page.click('.model-row[data-family="grok-4-7"]', button="right")
+        page.click('#context-menu button:text-is("Reset model selection")')
+        self.assertEqual(query(page), {})
+        # The chart background has the list actions only.
+        page.click("#chart", button="right", position={"x": 120, "y": 60})
+        self.assertEqual(page.text_content(".context-menu-title"), "Chart")
+        self.assertEqual(self.texts(page, "#context-menu button"),
+                         ["Show all listed models", "Reset model selection", "Clear model selection"])
+        page.keyboard.press("Escape")
+        self.assertTrue(page.is_hidden("#context-menu"))
+
+    # ---------- Chart ----------
+    def test_hover_tooltip_rows(self):
+        page = self.open()
+        page.hover('#chart [data-id="claude-opus-5-5"]')
+        self.assertTrue(page.is_visible("#tooltip"))
+        self.assertEqual(page.text_content("#tooltip .tooltip-head strong"), "Claude Opus 5.5")
+        self.assertEqual(page.text_content("#tooltip p"), "max")
+        self.assertEqual(self.tooltip_rows(page), [
+            ["Intelligence index", "58", None], ["Cost per task", "$6.00", None],
+            ["Response time", "600 s", None], ["Output speed", "96 tok/s", None]])
+        self.assertEqual(page.get_attribute("#tooltip a", "href"), "https://artificialanalysis.ai/models/claude-opus-5-5")
+        self.assertEqual(page.text_content("#tooltip a"), "Artificial Analysis")
+        # Crosshair labels at the axes.
+        overlay = page.eval_on_selector_all('#chart g[aria-hidden="true"] text', "els => els.map((e) => e.textContent)")
+        self.assertEqual(overlay, ["58", "$6.00"])
+
+        page.hover('#chart [data-id="gpt-6-luna"]')
+        self.assertEqual(self.tooltip_rows(page), [
+            ["Intelligence index", "45", None], ["Cost per task", "$0.05", None],
+            ["Response time", "—", None], ["Output speed", "—", None]])
+        page.mouse.move(5, 5)
+        self.assertTrue(page.is_hidden("#tooltip"))
+
+    def test_pin_and_compare(self):
+        page = self.open()
+        page.click('#chart [data-id="claude-opus-5-5"]')
+        self.assertEqual(self.state(page, "pinned"), "claude-opus-5-5")
+        self.assertEqual(page.get_attribute('#chart [data-id="claude-opus-5-5"]', "aria-pressed"), "true")
+        page.mouse.move(5, 5)
+        self.assertEqual(page.text_content("#tooltip p"), "max · Pinned")
+
+        page.hover('#chart [data-id="grok-4-7"]')
+        self.assertIn("comparing", page.get_attribute("#tooltip", "class"))
+        self.assertEqual(page.text_content("#tooltip .tooltip-head strong"), "Grok 4.7")
+        self.assertEqual(page.text_content(".comparison-reference"), "vs Claude Opus 5.5 · max")
+        self.assertEqual(self.texts(page, ".comparison-table thead th"), ["Metric", "Selected", "Hovered", "Multiplier"])
+        compare = lambda: page.eval_on_selector_all(
+            ".comparison-table tbody tr:not(.comparison-note)", "els => els.map((r) => [...r.children].map((c) => c.textContent))")
+        self.assertEqual(compare(), [
+            ["Intelligence index", "58", "48", "0.828×"],
+            ["Cost per task", "$6.00", "$0.60", "0.1×"],
+            ["Response time", "600 s", "60 s", "0.1×"],
+            ["Output speed", "96 tok/s", "100 tok/s", "1.04×"]])
+        # Both crosshairs: the pinned one solid, the hovered one dashed.
+        self.assertEqual(page.locator('#chart g[aria-hidden="true"] line').count(), 4)
+
+        page.hover('#chart [data-id="gpt-6-luna"]')
+        self.assertEqual(compare()[2], ["Response time", "600 s", "—", "—"])
+        # With a plan, the comparison adds the API cost.
+        page.click('#plan-sections [data-plan="claude-max-5x"]')
+        page.hover('#chart [data-id="grok-4-7"]')
+        self.assertEqual(compare()[1:3], [["Cost per task", "$1.20", "$0.60", "0.5×"],
+                                          ["API cost per task", "$6.00", "$0.60", "0.1×"]])
+
+        page.mouse.move(5, 5)
+        self.assertNotIn("comparing", page.get_attribute("#tooltip", "class"))
+        page.click('#tooltip button[data-key="close"]')
+        self.assertIsNone(self.state(page, "pinned"))
+        self.assertTrue(page.is_hidden("#tooltip"))
+        # Clicking a pinned point again unpins it.
+        page.click('#chart [data-id="grok-4-7"]')
+        page.click('#chart [data-id="grok-4-7"]')
+        self.assertIsNone(self.state(page, "pinned"))
+
+    def test_escape_priority_chain(self):
+        page = self.open()
+        page.click('#chart [data-id="claude-opus-5-5"]')
+        page.click('.series-label[data-label="grok-4-7"]')
+        self.assertEqual(self.state(page, "highlights"), ["grok-4-7"])
+        page.fill("#model-search", "gem")
+        page.evaluate("Object.defineProperty(document, 'fullscreenEnabled', { value: false, configurable: true })")
+        page.click("#fullscreen-button")
+        self.assertTrue(self.state(page, "fallbackFullscreen"))
+        self.assertEqual(page.get_attribute("#fullscreen-button", "aria-pressed"), "true")
+        page.click('.model-row[data-family="gemini-4-argon"]', button="right")
+        self.assertTrue(page.is_visible("#context-menu"))
+
+        def snapshot():
+            return [page.is_visible("#context-menu"), page.is_visible("#help-popover"),
+                    self.state(page, "query"), self.state(page, "pinned"),
+                    self.state(page, "highlights"), self.state(page, "fallbackFullscreen")]
+
+        page.keyboard.press("Escape")
+        self.assertEqual(snapshot(), [False, False, "gem", "claude-opus-5-5", ["grok-4-7"], True])
+        self.assertEqual(page.evaluate("document.activeElement.dataset.family"), "gemini-4-argon")
+        page.click("#help-button")
+        self.assertTrue(page.is_visible("#help-popover"))
+        page.keyboard.press("Escape")
+        self.assertEqual(snapshot(), [False, False, "gem", "claude-opus-5-5", ["grok-4-7"], True])
+        self.assertEqual(page.evaluate("document.activeElement.id"), "help-button")
+        page.keyboard.press("Escape")
+        self.assertEqual(snapshot(), [False, False, "", "claude-opus-5-5", ["grok-4-7"], True])
+        self.assertEqual(page.input_value("#model-search"), "")
+        page.keyboard.press("Escape")
+        self.assertEqual(snapshot(), [False, False, "", None, [], True])
+        self.assertTrue(page.is_hidden("#tooltip"))
+        page.keyboard.press("Escape")
+        self.assertEqual(snapshot(), [False, False, "", None, [], False])
+        self.assertFalse(page.evaluate("document.getElementById('app').classList.contains('fullscreen-fallback')"))
+        page.keyboard.press("Escape")
+        self.assertEqual(snapshot(), [False, False, "", None, [], False])
+
+    def test_table_view(self):
+        page = self.open()
+        page.click("#table-button")
+        self.assertEqual(page.get_attribute("#table-button", "aria-pressed"), "true")
+        self.assertTrue(page.is_hidden("#chart-wrap"))
+        self.assertTrue(page.is_visible("#table-view"))
+        self.assertTrue(page.is_disabled("#png-button"))
+        self.assertEqual(self.texts(page, "#data-table thead th"), [
+            "Model", "Reasoning", "Intelligence", "Coding (SciCode)", "Math (AIME 2025)", "Terminal-Bench v4.0",
+            "LiveBench Coding", "LiveBench Agentic Coding", "Cost per task", "Response time", "Pareto"])
+        self.assertEqual(page.text_content("#table-caption"), "10 variants, highest Intelligence index first.")
+        table = self.table(page)
+        self.assertEqual(list(table), [
+            "Claude Opus 5.5 (max)", "GPT-6 Astra (max)", "Claude Opus 5.5 (high)", "Gemini 4 Argon (Default)",
+            "Claude Fable 5.1 (Default)", "GPT-6.1 Sol (xhigh)", "GPT-6 Astra (medium)", "Grok 4.7 (Default)",
+            "GPT-6 Luna (low)", "Claude Haiku 5.5 (low)"])
+        self.assertEqual({name for name, cells in table.items() if cells[-1][0] == "Yes"},
+                         {"Claude Opus 5.5 (max)", "GPT-6 Astra (max)", "Claude Opus 5.5 (high)",
+                          "Gemini 4 Argon (Default)", "GPT-6.1 Sol (xhigh)", "Grok 4.7 (Default)", "GPT-6 Luna (low)"})
+        self.assertEqual(table["GPT-6 Astra (max)"][1:8], [
+            ["57", None], ["47", None], ["—", None], ["—", None], ["80.5", "2/2 subtasks"], ["57.3", "3/3 subtasks"],
+            ["$3.00", None]])
+        self.assertEqual(table["GPT-6 Luna (low)"][-2], ["—", None])
+
+        # Sidebar filters, the speed limit and the benchmark apply.
+        page.click('.model-row[data-family="claude-opus-5-5"]')
+        self.assertEqual(len(self.table(page)), 8)
+        self.set_slider(page, 125)
+        self.assertEqual(page.text_content("#table-caption"),
+                         "4 variants, highest Intelligence index first. 4 hidden by the response time limit.")
+        self.set_slider(page, 200)
+        page.click('#metric-tabs [data-key="livebench_coding"]')
+        self.assertEqual(list(self.table(page)), ["GPT-6 Astra (max)", "GPT-6 Astra (medium)"])
+        self.assertEqual(page.get_attribute("#data-table thead th:nth-child(7)", "aria-sort"), "descending")
+        page.click('#metric-tabs [data-key="math_index"]')
+        self.assertEqual(page.text_content("#table-caption"), "None of the selected variants has Math (AIME 2025) data.")
+
+        page.click("#table-button")
+        self.assertTrue(page.is_visible("#chart-wrap"))
+        self.assertTrue(page.is_hidden("#table-view"))
+
+    def test_theme_follows_system_and_persists(self):
+        page = self.open(color_scheme="light")
+        html = lambda: page.get_attribute("html", "data-theme")
+        background = lambda: page.get_attribute("#chart > rect", "fill")
+        meta = lambda: page.get_attribute('meta[name="theme-color"]', "content")
+        self.assertEqual(html(), "light")
+        self.assertEqual(background(), "#fff")
+        self.assertEqual(meta(), "#ffffff")
+        page.emulate_media(color_scheme="dark")
+        page.wait_for_function("document.documentElement.dataset.theme === 'dark'")
+        self.assertEqual(background(), "#000")
+        self.assertEqual(meta(), "#000000")
+        self.assertEqual(page.get_attribute("#theme-toggle", "aria-label"), "Switch to light mode")
+
+        page.click("#theme-toggle")
+        self.assertEqual(html(), "light")
+        self.assertEqual(background(), "#fff")
+        self.assertEqual(page.evaluate("localStorage.getItem('theme')"), "light")
+        # A stored choice wins over the system setting, also after a reload.
+        page.emulate_media(color_scheme="dark")
+        page.wait_for_timeout(100)
+        self.assertEqual(html(), "light")
+        page.reload()
+        self.ready(page)
+        self.assertEqual(html(), "light")
+        self.assertEqual(background(), "#fff")
+        self.assertEqual(meta(), "#ffffff")
+        self.assertNotIn("theme", page.url)
+
+    def test_url_round_trip_through_reload(self):
+        search = ("?ref=x&metric=coding_index&models=claude-opus-5-5,gpt-6-astra,grok-4-7,claude-sonnet-5"
+                  "&hide-reasoning=none,medium&frontier=false&linear=true&labels=false&claude_plan=claude-max-5x"
+                  "&codex_plan=chatgpt-pro&max_response_time=250&deprecated=true")
+        page = self.open(search)
+
+        def check():
+            self.assertEqual(urlsplit(page.url).query, search[1:])
+            self.assertEqual(page.get_attribute('#metric-tabs [data-key="coding_index"]', "aria-current"), "true")
+            self.assertEqual(page.text_content("#model-count"), "4")
+            self.assertEqual({f for f, on in self.rows(page) if on},
+                             {"claude-opus-5-5", "gpt-6-astra", "grok-4-7", "claude-sonnet-5"})
+            efforts = dict(page.eval_on_selector_all(
+                "#effort-buttons button", "els => els.map((e) => [e.dataset.key, e.getAttribute('aria-pressed')])"))
+            self.assertEqual(efforts["medium"], "false")
+            self.assertEqual(efforts["max"], "true")
+            for selector, pressed in [("#pareto-toggle", "false"), ("#scale-linear", "true"),
+                                      ("#deprecated-toggle", "true"), ('[data-plan="claude-max-5x"]', "true"),
+                                      ('[data-plan="chatgpt-pro"]', "true")]:
+                self.assertEqual(page.get_attribute(selector, "aria-pressed"), pressed, selector)
+            self.assertEqual(page.locator(".series-label").count(), 0)
+            self.assertEqual(page.text_content("#time-readout"), "≤ 250 s · 3 hidden")
+            self.assertEqual(self.points(page), {"claude-sonnet-5-high", "claude-sonnet-5", "grok-4-7"})
+
+        check()
+        page.reload()
+        self.ready(page)
+        check()
+
+        # State changed through the controls survives a reload too.
+        page.click('#metric-tabs [data-key="intelligence_index"]')
+        page.click("#pareto-toggle")
+        page.click("#scale-log")
+        page.click('.model-row[data-family="grok-4-7"]')
+        page.click('#plan-sections [data-plan="chatgpt-plus"]')
+        url = page.url
+        self.assertEqual(urlsplit(url).query,
+                         "ref=x&models=claude-opus-5-5,gpt-6-astra,claude-sonnet-5&hide-reasoning=none,medium"
+                         "&labels=false&claude_plan=claude-max-5x&codex_plan=chatgpt-plus&max_response_time=250"
+                         "&deprecated=true")
+        page.reload()
+        self.ready(page)
+        self.assertEqual(page.url, url)
+        self.assertEqual(page.get_attribute("#pareto-toggle", "aria-pressed"), "true")
+        self.assertEqual(page.get_attribute('[data-plan="chatgpt-plus"]', "aria-pressed"), "true")
+
+    def test_unknown_url_values_fall_back_to_defaults(self):
+        page = self.open("?models=old-model,another-old-one")
+        self.assertEqual(set(self.state(page, "selected")), DEFAULT_FAMILIES)
+        self.assertEqual(query(page), {})
+        self.assertEqual(self.points(page), DEFAULT_POINTS)
+
+        page = self.open("?models=old-model,grok-4-7,grok-4-7")
+        self.assertEqual(self.state(page, "selected"), ["grok-4-7"])
+        self.assertEqual(query(page), {"models": "grok-4-7"})
+        self.assertEqual(page.text_content("#empty-title"), "Only 1 selected model has Intelligence data")
+
+        page = self.open("?models=")
+        self.assertEqual(self.state(page, "selected"), [])
+        self.assertEqual(page.text_content("#empty-title"), "No models selected")
+        self.assertEqual(query(page), {"models": ""})
+
+        page = self.open("?metric=coding_index_v2&claude_plan=max-100x&max_response_time=-5&frontier=maybe"
+                         "&linear=1&hide-reasoning=ultra")
+        self.assertEqual(self.state(page, "metric"), "intelligence_index")
+        self.assertEqual(self.state(page, "plans"), {"claude": "claude-api", "codex": "chatgpt-api"})
+        self.assertEqual(self.state(page, "excluded"), ["none"])
+        self.assertTrue(self.state(page, "frontier"))
+        self.assertFalse(self.state(page, "linear"))
+        self.assertEqual(page.text_content("#time-readout"), "No limit")
+        self.assertEqual(query(page), {})
+        # Known values are read in any case; unknown names in a list are dropped.
+        page = self.open("?frontier=FALSE&hide-reasoning=ultra,max")
+        self.assertEqual(query(page), {"frontier": "false", "hide-reasoning": "max"})
+
+    # ---------- Mobile ----------
+    def test_mobile_sheet_and_tap_to_pin(self):
+        page = self.open(viewport=MOBILE, has_touch=True)
+        self.assertTrue(self.state(page, "compact"))
+        self.assertTrue(page.is_hidden("#sidebar"))
+        self.assertEqual(" ".join(page.text_content("#sheet-toggle").split()), "Models 8")
+        self.assertEqual(page.locator(".series-label").count(), 0)
+        self.assertEqual(page.locator("#chart-legend button").count(), 8)
+
+        page.tap("#sheet-toggle")
+        self.assertTrue(page.is_visible("#sidebar"))
+        self.assertEqual(page.get_attribute("#sheet-toggle", "aria-expanded"), "true")
+        self.assertEqual(page.get_attribute("#sidebar", "role"), "dialog")
+        self.assertTrue(page.is_visible('#plan-sections [data-plan="claude-max-20x"]'))
+        self.assertTrue(page.is_visible("#time-slider"))
+        page.tap('.model-row[data-family="grok-4-7"]')
+        self.assertEqual(" ".join(page.text_content("#sheet-toggle").split()), "Models 7")
+        page.tap('.model-row[data-family="grok-4-7"]')
+        page.fill("#model-search", "gem")
+        page.keyboard.press("Escape")
+        self.assertEqual(page.input_value("#model-search"), "")
+        self.assertTrue(page.is_visible("#sidebar"))
+        page.keyboard.press("Escape")
+        self.assertTrue(page.is_hidden("#sidebar"))
+        page.tap("#sheet-toggle")
+        page.tap("#sheet-done")
+        self.assertTrue(page.is_hidden("#sidebar"))
+        self.assertEqual(page.get_attribute("#sheet-toggle", "aria-expanded"), "false")
+        page.keyboard.press("/")
+        self.assertTrue(page.is_visible("#sidebar"))
+        self.assertEqual(page.evaluate("document.activeElement.id"), "model-search")
+        page.keyboard.press("Escape")
+        self.assertTrue(page.is_hidden("#sidebar"))
+        self.assertEqual(page.evaluate("document.activeElement.id"), "sheet-toggle")
+
+        # A legend tap highlights the family, a second tap clears it.
+        page.tap('#chart-legend [data-family="grok-4-7"]')
+        self.assertEqual(self.state(page, "highlights"), ["grok-4-7"])
+        page.tap('#chart-legend [data-family="grok-4-7"]')
+        self.assertEqual(self.state(page, "highlights"), [])
+
+        # A tap pins the nearest point within 40 px; points ignore the pointer.
+        box = page.locator('#chart [data-id="gpt-6-luna"] circle:last-child').bounding_box()
+        x, y = box["x"] + box["width"] / 2, box["y"] + box["height"] / 2
+        page.touchscreen.tap(x + 8, y - 8)
+        self.assertEqual(self.state(page, "pinned"), "gpt-6-luna")
+        self.assertTrue(page.is_visible("#tooltip"))
+        self.assertEqual(page.text_content("#tooltip p"), "low · Pinned")
+        self.assertEqual(page.eval_on_selector("#tooltip", "e => getComputedStyle(e).position"), "sticky")
+        chart = page.locator("#chart").bounding_box()
+        page.touchscreen.tap(chart["x"] + chart["width"] - 20, chart["y"] + chart["height"] - 20)
+        self.assertIsNone(self.state(page, "pinned"))
+        self.assertTrue(page.is_hidden("#tooltip"))
+
+    # ---------- Pure helpers ----------
+    def test_cost_formatter(self):
+        page = self.open()
+        cases = [[6, False, "$6.00"], [1234.5, False, "$1,234.50"], [0.1234, False, "$0.123"],
+                 [0.01, False, "$0.01"], [0.0085, False, "$0.0085"], [0.0012345, False, "$0.0012"],
+                 [0.004, False, "$0.004"], [0.00999, False, "$0.01"], [None, False, "—"],
+                 [1500, True, "$1.5k"], [2000, True, "$2k"], [0.5, True, "$0.5"], [5, True, "$5"],
+                 [0.005, True, "$0.005"], [0, True, "$0"]]
+        got = page.evaluate("(cases) => cases.map(([v, short]) => __chart.fmtCost(v, short))", cases)
+        self.assertEqual(got, [c[2] for c in cases])
+        self.assertEqual(page.evaluate("[__chart.fmtMult(48, 58), __chart.fmtMult(1, 0), __chart.fmtMult(null, 2)]"),
+                         ["0.828×", "—", "—"])
+        self.assertEqual(page.evaluate("[__chart.fmtSeconds(5.04), __chart.fmtSeconds(600), __chart.fmtSpeed(96.4)]"),
+                         ["5.0 s", "600 s", "96 tok/s"])
+
+    def test_ticks(self):
+        page = self.open()
+        self.assertEqual(page.evaluate("__chart.niceTicks(0, 63)"), [0, 20, 40, 60])
+        self.assertEqual(page.evaluate("__chart.niceTicks(0, 45)"), [0, 10, 20, 30, 40])
+        self.assertEqual(page.evaluate("__chart.niceTicks(20, 60)"), [20, 30, 40, 50, 60])
+        self.assertEqual(page.evaluate("__chart.niceTicks(40, 60)"), [40, 45, 50, 55, 60])
+        self.assertEqual(page.evaluate("__chart.niceTicks(0, 0.35)"), [0, 0.1, 0.2, 0.3])
+        self.assertEqual(page.evaluate("__chart.logTicks(0.035, 6.48)"), [0.05, 0.1, 0.2, 0.5, 1, 2, 5])
+        self.assertEqual(page.evaluate("__chart.logTicks(0.035, 6.48, true)"), [0.1, 0.3, 1, 3])
+        self.assertEqual(page.evaluate("__chart.logTicks(1, 10)"), [1, 1.5, 2, 3, 5, 7, 10])
+        self.assertEqual(page.evaluate("__chart.yDomain([45, 58])"), [20, 60])
+        self.assertEqual(page.evaluate("__chart.yDomain([45, 58], true)"), [40, 60])
+
+    def test_pareto_set(self):
+        page = self.open()
+        front = page.evaluate("""() => __chart.paretoSet([
+            { id: 'a', x: 1, y: 1 }, { id: 'b', x: 2, y: 3 }, { id: 'c', x: 2, y: 2 }, { id: 'd', x: 3, y: 3 },
+            { id: 'e', x: 0.5, y: 0.5 }, { id: 'f', x: 4, y: 5 }, { id: 'g', x: null, y: 9 }]).map((r) => r.id)""")
+        # c is beaten at the same cost, d ties b at a higher cost, g has no cost.
+        self.assertEqual(front, ["e", "a", "b", "f"])
+        self.assertEqual(page.evaluate("__chart.paretoSet([])"), [])
+
+    def test_effort_ordering(self):
+        page = self.open()
+        rows = page.evaluate("""() => {
+            const row = (slug, effort, extra = {}) => ({ slug, family: 'fam', family_name: 'Fam', lab: 'acme',
+                cost_per_task: 1, intelligence_index: 50, effort, ...extra });
+            const data = __chart.normalise([row('m-max', 'max', { effort_order: 60 }), row('m-none', 'none'),
+                row('m-high', 'high'), row('m-default', undefined, { reasoning: true }),
+                row('m-minimal', 'minimal'), row('m-xhigh', 'xhigh'), row('m-low', 'low'), row('m-medium', 'medium')]);
+            const fam = data.families.get('fam');
+            const state = { ...__chart.state, data, selected: ['fam'], deprecated: false };
+            return [fam.variants.map((v) => v.effort), __chart.effortLevels(data, state).map((l) => l.label)];
+        }""")
+        order = ["none", "minimal", "low", "medium", "default", "high", "xhigh", "max"]
+        self.assertEqual(rows, [order, order])
+        # Without an effort field: reasoning models get "default", the rest "none".
+        efforts = page.evaluate("""() => __chart.normalise([
+            { slug: 'r', cost_per_task: 1, reasoning: true }, { slug: 'n', cost_per_task: 1 }]).variants
+            .map((v) => [v.id, v.effort, v.effortOrder])""")
+        self.assertEqual(efforts, [["n", "none", 0], ["r", "default", 35]])
+
+    def test_url_codec(self):
+        page = self.open()
+        result = page.evaluate("""() => {
+            const known = { families: new Set(__chart.state.data.families.keys()),
+                            efforts: new Set(Object.keys(__chart.CONFIG.efforts)) };
+            const defaults = __chart.decodeUrl('', known);
+            const custom = { ...defaults, metric: 'livebench_coding', selected: ['grok-4-7', 'kimi-k3'],
+                excluded: [], frontier: false, linear: true, labels: false,
+                plans: { claude: 'claude-max-20x', codex: 'chatgpt-api' }, maxTime: 90, deprecated: true };
+            const encoded = __chart.encodeUrl(custom, '?keep=1&metric=x&models=y');
+            const decoded = __chart.decodeUrl(encoded, known);
+            return { empty: __chart.encodeUrl(defaults), encoded, same: JSON.stringify(decoded) === JSON.stringify(custom),
+                     reordered: __chart.encodeUrl({ ...defaults, selected: [...defaults.selected].reverse() }) };
+        }""")
+        self.assertEqual(result["empty"], "")
+        self.assertEqual(result["encoded"],
+                         "?keep=1&metric=livebench_coding&models=grok-4-7,kimi-k3&hide-reasoning=&frontier=false"
+                         "&linear=true&labels=false&claude_plan=claude-max-20x&max_response_time=90&deprecated=true")
+        self.assertTrue(result["same"])
+        self.assertEqual(result["reordered"], "")
+
+
+@unittest.skipIf(sync_playwright is None, "playwright is not installed")
+class ChromiumTests(PageTests):
+    browser_name = "chromium"
+
+
+@unittest.skipIf(sync_playwright is None, "playwright is not installed")
+class FirefoxTests(PageTests):
+    browser_name = "firefox"
+
+
+# The shared base class runs only through the browser subclasses above.
+del PageTests
+
+
+if __name__ == "__main__":
+    unittest.main()

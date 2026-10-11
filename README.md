@@ -118,9 +118,11 @@ The RSC endpoint requires specific headers (`rsc: 1`, `next-router-state-tree`, 
 - **Placeholder values.** The RSC stream marks missing values with strings such as `"$undefined"`. The parser turns them into `null`. Some entries hold a reference string instead of a nested object. The deduplication step prefers entries with complete data.
 - **Official API is preferred** for production use. This parser is a workaround for when you don't have (or don't want) an API key. See [artificialanalysis.ai/documentation](https://artificialanalysis.ai/documentation) for the free API tier (1,000 req/day).
 
-## Companion: Intelligence Index vs. Cost per Task plot
+## Companion: the intelligence vs cost page
 
 `intelligence-vs-cost.html` plots AI models by score and cost, in the style of the "Cost vs intelligence" chart on [slopalytics.com](https://slopalytics.com/). Each point is one model variant (one reasoning effort level), and a line joins the variants of one model family. The X axis shows the cost to run one benchmark task (USD, log scale by default). The Y axis shows the AA Intelligence Index. A dashed line marks the Pareto frontier: the variants that give the highest score for the money.
+
+The sidebar picks the model families and reasoning levels to plot, a subscription plan for Claude and for Codex, and a maximum response time. With a plan picked, the X axis shows the effective cost per task: the page scales the API cost of Anthropic models, and of OpenAI models that are not open weights, by the plan's monthly fee divided by the API value of its allowance. Hover over a point for its details. Click it to pin it, then hover over another point to compare the two. The selection, benchmark, plans and chart options are kept in the page URL, so a link shows the same chart.
 
 The Y axis can show six scores: the Intelligence Index, SciCode, the AIME 2025 math contest score, Terminal-Bench v4.0, LiveBench Coding, or LiveBench Agentic Coding. Use the benchmark tabs in the page header to switch. The Pareto line follows the selected score.
 
@@ -197,15 +199,7 @@ python3 artificialanalysis.ai-parser.py --minimal --pretty \
 
 The focused fixtures under `tests/fixtures/` contain selected official rows and
 category definitions; their metadata records the source commit and retrieval.
-Run regression checks with:
-
-```bash
-python3 -m unittest discover -s tests -v
-node --test tests/test_ui.cjs
-```
-
-The UI tests run the page's inline script with small DOM stubs in Node; they do
-not verify browser layout.
+The parser tests use them (see [Tests](#tests)).
 
 The page adds one filter that the original site does not have: **maximum end-to-end response time**. Reasoning models can think for minutes before they answer. Move the slider to fade out models that are slower than your limit. The page then computes the Pareto line again from the models that remain. This shows you the best value models that are also fast enough for your use case.
 
@@ -222,6 +216,28 @@ The buttons at the right of the header switch between light and dark themes, dow
 On a phone, or in a window 900 pixels wide or less, the sidebar moves into a full-screen sheet behind the "Models" button, together with the plan selectors and the response time slider. A two-column legend under the chart takes the place of the labels. Tap near a point to see its details in a card at the bottom of the screen.
 
 The page has no build step and no script dependencies; it loads the DM Sans font from Google Fonts. It also has tooltips, keyboard navigation, and light and dark themes.
+
+## Tests
+
+The parser tests in `tests/test_parser.py` need only the Python standard library:
+
+```bash
+python3 -m unittest tests.test_parser -v
+```
+
+The browser tests in `tests/test_ui.py` drive `intelligence-vs-cost.html` in Chromium and
+Firefox with [Playwright for Python](https://playwright.dev/python/). The test fixture serves
+this folder with `http.server` on a free port. Most tests replace `models.json` with a small
+fixture, so their expected values do not change when the data does; one smoke test loads the
+real `models.json`. Run the parser and browser tests together with:
+
+```bash
+uv run --with playwright python3 -m unittest discover -s tests -v
+```
+
+Without Playwright, `python3 -m unittest discover -s tests -v` runs the parser tests and
+skips the browser tests. Playwright needs its Chromium and Firefox builds; install them once
+with `uv run --with playwright playwright install chromium firefox` if they are missing.
 
 ## License
 
