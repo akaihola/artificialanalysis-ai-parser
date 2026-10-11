@@ -151,24 +151,35 @@ class PageTests(unittest.TestCase):
 
     # ---------- Helpers ----------
     def open(self, search="", *, models=MODELS, viewport=DESKTOP, color_scheme="dark", has_touch=False):
-        """A fresh context and page, loaded and drawn. Console errors fail the test."""
+        """A fresh context and page, loaded and drawn. Console errors fail the test.
+
+        `models` is the models.json fixture, None for the real file, or an HTTP error status.
+        With an error status, only page errors (uncaught exceptions) fail the test.
+        """
         context = self.browser.new_context(viewport=viewport, color_scheme=color_scheme, has_touch=has_touch)
         self.addCleanup(context.close)
         context.set_default_timeout(5000)
         # The page loads DM Sans from Google Fonts; the tests use the fallback font offline.
         context.route(re.compile(r"^https://fonts\.(googleapis|gstatic)\.com/"),
                       lambda route: route.fulfill(status=200, content_type="text/css", body=""))
-        if models is not None:
+        failing = isinstance(models, int)
+        if failing:
+            context.route("**/models.json", lambda route: route.fulfill(status=models, body="Not found"))
+        elif models is not None:
             body = json.dumps(models)
             context.route("**/models.json",
                           lambda route: route.fulfill(status=200, content_type="application/json", body=body))
         page = context.new_page()
         errors = []
-        page.on("console", lambda m: errors.append(f"console.{m.type}: {m.text}") if m.type == "error" else None)
+        page.on("console", lambda m: errors.append(f"console.{m.type}: {m.text}")
+                if m.type == "error" and not failing else None)
         page.on("pageerror", lambda e: errors.append(f"pageerror: {e}"))
         self.addCleanup(lambda: self.assertEqual(errors, [], "console errors"))
         page.goto(self.base + search)
-        self.ready(page)
+        if failing:
+            page.wait_for_selector("#empty-state:not([hidden])")
+        else:
+            self.ready(page)
         return page
 
     @staticmethod
@@ -662,6 +673,93 @@ class PageTests(unittest.TestCase):
         self.assertEqual(self.texts(page, "#context-menu button"),
                          ["Show all listed models", "Reset model selection", "Clear model selection"])
         page.keyboard.press("Escape")
+        self.assertTrue(page.is_hidden("#context-menu"))
+
+    @staticmethod
+    def keyboard_menu(page, selector, x=0, y=0):
+        """Open the context menu on an element as the keyboard does (Shift+F10)."""
+        page.keyboard.press("Shift")
+        page.eval_on_selector(selector, """(el, [x, y]) => el.dispatchEvent(new MouseEvent('contextmenu',
+            { bubbles: true, cancelable: true, clientX: x, clientY: y }))""", [x, y])
+
+    def test_context_menu_keyboard(self):
+        page = self.open()
+        labels = page.eval_on_selector_all(".series-label", "els => els.map((e) => e.dataset.label)")
+        first = f'.series-label[data-label="{labels[0]}"]'
+        page.focus(first)
+        self.keyboard_menu(page, first)
+        self.assertTrue(page.is_visible("#context-menu"))
+        active = lambda: page.evaluate("document.activeElement.textContent")
+        page.keyboard.press("ArrowDown")
+        self.assertEqual(active(), "Show only this family")
+        page.keyboard.press("End")
+        self.assertEqual(active(), "Clear model selection")
+        page.keyboard.press("Home")
+        self.assertEqual(active(), "Hide this family")
+        # Tab closes the menu and moves on from the label that opened it.
+        page.keyboard.press("Tab")
+        self.assertTrue(page.is_hidden("#context-menu"))
+        self.assertEqual(page.evaluate("document.activeElement.dataset.label"), labels[1])
+        # A key press that gives a position opens the menu there.
+        self.keyboard_menu(page, first, 500, 300)
+        self.assertEqual(page.eval_on_selector("#context-menu", "e => [e.offsetLeft, e.offsetTop]"), [500, 300])
+        page.keyboard.press("Escape")
+
+        # When the action removes the origin, focus goes to the first remaining point...
+        page.focus('#chart [data-id="grok-4-7"]')
+        self.keyboard_menu(page, '#chart [data-id="grok-4-7"]')
+        page.keyboard.press("Enter")  # Hide this family
+        self.assertNotIn("grok-4-7", self.state(page, "selected"))
+        self.assertTrue(page.evaluate("document.activeElement.matches('#chart [data-id]')"))
+        # ...or to the chart heading when no point is left.
+        page.focus('#chart [data-id="claude-opus-5-5"]')
+        self.keyboard_menu(page, '#chart [data-id="claude-opus-5-5"]')
+        page.keyboard.press("ArrowDown")
+        page.keyboard.press("Enter")  # Show only this family: two points, so the chart is empty
+        self.assertTrue(page.is_visible("#empty-state"))
+        self.assertEqual(page.evaluate("document.activeElement.id"), "chart-title")
+        # A sidebar row that disappears hands focus to the first row.
+        page.click("#show-all")
+        page.focus('.model-row[data-family="mistral-large-4"]')
+        self.keyboard_menu(page, '.model-row[data-family="mistral-large-4"]')
+        page.keyboard.press("ArrowDown")
+        page.keyboard.press("Enter")  # Show only this family
+        page.click("#show-all")  # the Other list keeps only the selected mistral row
+        self.keyboard_menu(page, '.model-row[data-family="mistral-large-4"]')
+        page.keyboard.press("Enter")  # Hide this family: the row leaves the list
+        self.assertEqual(page.locator('.model-row[data-family="mistral-large-4"]').count(), 0)
+        self.assertEqual(page.evaluate("document.activeElement.dataset.family"), self.rows(page)[0][0])
+
+    def test_zoom_y_leaves_out_points_outside_the_range(self):
+        low = variant("gemini-4-argon-low", "gemini-4-argon", "Gemini 4 Argon", "google", "Google", "low", 35, 2.0, 30)
+        page = self.open(models=MODELS + [low])
+        self.assertIn("gemini-4-argon-low", self.points(page))
+        page.click('#chart [data-id="gemini-4-argon-low"]')
+        page.click("#zoom-toggle")
+        self.assertEqual(self.ticks(page)[0], ["40", "45", "50", "55", "60"])
+        # The clipped point cannot be focused or pinned; its family line still runs towards it.
+        self.assertNotIn("gemini-4-argon-low", self.points(page))
+        self.assertEqual(page.get_attribute('#chart g[data-family="gemini-4-argon"] > path', "d").count("L"), 1)
+        self.assertTrue(page.is_hidden("#tooltip"))
+        self.assertEqual(page.locator('#chart g[aria-hidden="true"] line').count(), 0)
+        page.click("#zoom-toggle")
+        self.assertIn("gemini-4-argon-low", self.points(page))
+        self.assertEqual(page.text_content("#tooltip p"), "low · Pinned")
+
+    def test_controls_after_models_json_fails(self):
+        page = self.open(models=404)
+        self.assertEqual(page.text_content("#empty-title"), "Could not load models.json")
+        for selector in ('#metric-tabs [data-key="coding_index"]', "#zoom-toggle", "#pareto-toggle", "#scale-linear",
+                         "#deprecated-toggle", "#reset-selection", "#table-button", "#table-button", "#theme-toggle",
+                         "#show-all"):
+            page.click(selector)
+        page.fill("#model-search", "gem")
+        self.set_slider(page, 50)
+        page.eval_on_selector("#chart", """(e) => e.dispatchEvent(new MouseEvent('contextmenu',
+            { bubbles: true, cancelable: true, clientX: 300, clientY: 300 }))""")
+        page.keyboard.press("Escape")
+        page.keyboard.press("/")
+        self.assertEqual(page.text_content("#empty-title"), "Could not load models.json")
         self.assertTrue(page.is_hidden("#context-menu"))
 
     # ---------- Chart ----------

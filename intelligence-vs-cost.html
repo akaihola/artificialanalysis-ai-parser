@@ -139,6 +139,7 @@
     gap: 16px; margin-bottom: 6px;
   }
   .chart-heading h2 { flex-shrink: 1; font-size: 16px; font-weight: 500; }
+  .chart-heading h2:focus { outline: none; }  /* focused only when a menu action removed its origin */
   .chart-controls { display: flex; flex-shrink: 0; align-items: center; gap: 24px; }
   .controls-break { display: none; }
   .check-button {
@@ -597,7 +598,7 @@
     <main>
       <section class="chart-section" id="chart-section" aria-labelledby="chart-title">
         <div class="chart-heading">
-          <h2 id="chart-title">Cost vs intelligence</h2>
+          <h2 id="chart-title" tabindex="-1">Cost vs intelligence</h2>
           <div class="chart-controls" id="chart-controls">
             <button class="check-button" id="pareto-toggle" type="button" aria-pressed="true"
                     title="Show non-dominated variants: no other visible variant scores higher for the same or a lower cost.">
@@ -1118,7 +1119,10 @@ function chartModel(data, s) {
   }
   for (const list of families.values()) list.sort((a, b) => a.v.effortOrder - b.v.effortOrder);
 
-  const byId = new Map(visible.map((r) => [r.id, r]));
+  // With Zoom Y, points outside the score range are clipped away: they cannot be focused,
+  // tapped, hovered or pinned. Their family lines still run towards them.
+  const interactive = zoomed ? visible.filter(inY) : visible;
+  const byId = new Map(interactive.map((r) => [r.id, r]));
   const pinned = byId.get(s.pinned) || null;
   const hovered = byId.get(s.hovered) || null;
   const active = hovered || pinned;
@@ -1149,7 +1153,7 @@ function chartModel(data, s) {
   }
 
   return {
-    metric, base, rows, visible, ghosts, geo, xd, yd, xs, ys, zoomed,
+    metric, base, rows, visible, ghosts, interactive, geo, xd, yd, xs, ys, zoomed, inY,
     xTicks: s.linear ? niceTicks(0, xd[1]) : fitLogTicks(xd[0], xd[1], geo.compact, xs, 12 * geo.v),
     yTicks: niceTicks(yd[0], yd[1]),
     pareto, paretoIds, paretoFams, families, labels, legend,
@@ -1521,6 +1525,7 @@ function renderToolbar() {
 /* ---------- Sidebar ---------- */
 function renderSidebar() {
   const data = state.data;
+  if (!data) return;
   els.count.textContent = shownSelection(data, state).length;
 
   setHTML(els.efforts, effortLevels(data, state).map(({ effort, label }) =>
@@ -1541,6 +1546,7 @@ function renderSidebar() {
 
 function renderModelBrowser() {
   const data = state.data;
+  if (!data) return;
   const searching = state.query.trim() !== "";
   if (els.search.value !== state.query) els.search.value = state.query;
   els.searchKbd.hidden = state.query !== "";
@@ -1675,6 +1681,7 @@ function drawChart(m, c) {
       g += `<path d="${d}" fill="none" stroke="${color}" stroke-width="${e ? 3.5 : 2.25}" opacity="${lineOpacity}"${dash} pointer-events="none"/>`;
     }
     for (const r of rows) {
+      if (m.zoomed && !m.inY(r)) continue;
       const isActive = r === m.active, isPinned = r === m.pinned, onFront = m.paretoIds.has(r.id);
       const radius = isActive || isPinned ? 7 : onFront ? 6 : 4.5;
       const opacity = pareto ? (onFront || isActive || isPinned ? 1 : 0.15)
@@ -1861,6 +1868,7 @@ function showModelsWithData() {
  * no highlights, pin or hover, no context menu. Chart options, benchmark and plans stay.
  */
 function resetFilters() {
+  if (!state.data) return;
   closeMenu(false);
   Object.assign(state, { selected: defaultSelection(state.data.families), excluded: [...CONFIG.defaults.excluded],
     query: "", showAll: false, openWeights: false,
@@ -1944,6 +1952,7 @@ function syncUrlSoon() {
 function update(sync = true) {
   renderHeader();
   renderToolbar();
+  if (!state.data) return;  // models.json failed to load: the error message stays
   renderSidebar();
   renderChart();
   if (sync) syncUrl();
@@ -2236,6 +2245,7 @@ els.groups.addEventListener("focusout", (e) => {
 });
 
 els.slider.addEventListener("input", () => {
+  if (!state.data) return;
   state.maxTime = sliderToSeconds(+els.slider.value, CONFIG.sliderSteps, state.data.timeRange);
   renderTimeFilter();
   renderModelBrowser();
@@ -2310,7 +2320,7 @@ function rowNear(clientX, clientY) {
   const ctm = els.svg.getScreenCTM();
   if (!lastChart || !ctm) return null;
   const p = new DOMPoint(clientX, clientY).matrixTransform(ctm.inverse());
-  const hit = nearestRow(lastChart.visible, lastChart.xs, lastChart.ys, p.x, p.y);
+  const hit = nearestRow(lastChart.interactive, lastChart.xs, lastChart.ys, p.x, p.y);
   return hit && hit.d < CONFIG.tapRadius ? hit.row : null;
 }
 els.svg.addEventListener("click", (e) => {
@@ -2370,17 +2380,14 @@ window.addEventListener("keydown", () => { lastInput = "keyboard"; }, true);
 window.addEventListener("pointerdown", (e) => { lastInput = e.pointerType || "mouse"; }, true);
 
 function openMenu(target, clientX, clientY) {
+  if (!state.data) return false;
   const t = menuTarget(target, clientX, clientY);
   if (t === undefined) return false;
-  const keyboard = lastInput === "keyboard";
-  let x = clientX, y = clientY;
-  if ((!x && !y) || keyboard) {
-    const r = (t.origin || target).getBoundingClientRect();
-    x = r.left;
-    y = r.bottom;
-  }
-  state.menu = { x, y, title: t.model ? t.model.name : "Chart", items: menuItems(t.model, state, state.data),
-    originKey: t.origin?.getAttribute("data-key") ?? null, keyboard, openedAt: performance.now() };
+  // At the event's position; a key press that gives none opens it under the element.
+  const r = (t.origin || target).getBoundingClientRect();
+  state.menu = { x: clientX || r.left, y: clientY || r.bottom, title: t.model ? t.model.name : "Chart",
+    items: menuItems(t.model, state, state.data), originKey: t.origin?.getAttribute("data-key") ?? null,
+    keyboard: lastInput === "keyboard", openedAt: performance.now() };
   // The menu takes over from any hover emphasis.
   Object.assign(state, { hovered: null, labelHover: null, focusFamily: null });
   renderChart();
@@ -2401,15 +2408,25 @@ function renderMenu() {
   el.querySelector("button").focus({ preventScroll: true });
 }
 
-/** Close the menu; by default focus goes back to the element that opened it. */
+/**
+ * Close the menu; by default focus goes back to the element that opened it. If an action
+ * removed that element, focus goes to the first model row (for rows), the first legend
+ * entry (for the legend), the first chart point (for points and labels, from the keyboard),
+ * or the chart heading.
+ */
 function closeMenu(restoreFocus = true) {
   const m = state.menu;
   if (!m) return;
   state.menu = null;
   renderMenu();
-  const origin = restoreFocus && m.originKey != null ? byKey(document, m.originKey) : null;
+  if (!restoreFocus) return;
+  const key = m.originKey ?? "";
+  const target = (key && byKey(document, key)) ||
+    (key.startsWith("f:") && els.groups.querySelector(".model-row")) ||
+    (key.startsWith("g:") && els.legend.querySelector("button")) ||
+    (key && m.keyboard && els.svg.querySelector("[data-id]")) || els.title;
   // A refocused point or label shows its details, as focus does anywhere on the chart.
-  if (origin) origin.focus({ preventScroll: true });
+  target.focus({ preventScroll: true });
 }
 
 function onContextMenu(e) {
@@ -2434,7 +2451,8 @@ els.menu.addEventListener("click", (e) => {
 });
 els.menu.addEventListener("keydown", (e) => {
   if (e.key === "Escape" || e.key === "Tab") {
-    e.preventDefault();
+    // Tab closes the menu too, and then moves on from the element that opened it.
+    if (e.key === "Escape") e.preventDefault();
     e.stopPropagation();
     closeMenu();
     return;
