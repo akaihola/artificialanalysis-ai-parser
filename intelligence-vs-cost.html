@@ -101,6 +101,30 @@
     display: flex; align-items: center; justify-content: center;
     width: 32px; height: 32px; color: var(--fg-2);
   }
+  .icon-button[aria-expanded="true"] { color: var(--fg); }
+  .icon-button[aria-pressed="true"] { color: var(--accent); }
+  .mobile-only { display: none !important; }
+
+  /* Header popovers: help text and chart settings */
+  .popover-anchor { position: relative; display: flex; }
+  .popover {
+    position: absolute; top: calc(100% + 10px); right: 0; z-index: 20;
+    max-width: calc(100vw - 32px); padding: 16px;
+    background: var(--surface); border: 1px solid var(--line-2); border-radius: 8px;
+  }
+  .settings-popover { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; width: 220px; }
+  .help-popover {
+    width: 460px; max-height: calc(100dvh - 90px); overflow-y: auto; overscroll-behavior: contain;
+    color: var(--fg-2); font-size: 12.5px; line-height: 1.5; scrollbar-width: thin;
+    user-select: text; -webkit-user-select: text;
+  }
+  .help-popover h2 { color: var(--fg); font-size: 15px; font-weight: 500; }
+  .help-popover h3 { margin-top: 16px; color: var(--fg); font-size: 12.5px; font-weight: 550; }
+  .help-popover p, .help-popover ul { margin: 6px 0 0; }
+  .help-popover ul { padding-left: 18px; }
+  .help-popover li + li { margin-top: 5px; }
+  .help-popover strong { color: var(--fg); font-weight: 550; }
+  .help-popover a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
 
   .body-layout { display: grid; grid-template-columns: minmax(0, 1fr) var(--sidebar-width); min-height: 0; }
   main { display: grid; grid-template-rows: minmax(0, 1fr) auto; min-width: 0; min-height: 0; }
@@ -111,11 +135,14 @@
   }
   .chart-heading h2 { flex-shrink: 1; font-size: 16px; font-weight: 500; }
   .chart-controls { display: flex; flex-shrink: 0; align-items: center; gap: 24px; }
+  .controls-break { display: none; }
   .check-button {
-    display: inline-flex; align-items: center; gap: 8px; min-height: 32px;
-    color: var(--fg); font-size: 12px; white-space: nowrap;
+    display: inline-flex; align-items: center; gap: 8px;
+    color: var(--fg-2); font-size: 12px; white-space: nowrap;
   }
-  .check-button[aria-pressed="true"], .check-button:enabled:hover { color: var(--accent); }
+  .check-button > svg.icon { width: 13px; height: 13px; }
+  .chart-controls .check-button { min-height: 32px; color: var(--fg); }
+  .chart-controls .check-button[aria-pressed="true"], .chart-controls .check-button:enabled:hover { color: var(--accent); }
   .selection {
     display: inline-flex; flex-shrink: 0; align-items: center; justify-content: center;
     width: 12px; height: 12px; border: 1px solid var(--line-2); border-radius: 3px;
@@ -147,6 +174,41 @@
   .empty strong { font-size: 17px; font-weight: 500; }
   .empty p { margin: 0; max-width: 46ch; color: var(--fg-2); font-size: 12.5px; }
   .text-button { color: var(--accent); font-size: 12px; }
+
+  /* Legend under the compact chart: two columns of family buttons */
+  .chart-legend { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 12px; padding-top: 10px; }
+  .chart-legend button {
+    display: flex; align-items: center; gap: 7px; min-height: 32px; overflow: hidden;
+    font-size: 13px; font-weight: 550; white-space: nowrap; text-align: left;
+    -webkit-touch-callout: none;
+  }
+  .chart-legend button span:last-child { overflow: hidden; text-overflow: ellipsis; }
+  .chart-legend button.on-frontier { font-weight: 700; }
+  .chart-legend button.dim { opacity: .35; }
+
+  /* ---------- Table view ---------- */
+  .table-view {
+    flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain;
+    scrollbar-width: thin; scrollbar-color: var(--line-2) var(--bg);
+    user-select: text; -webkit-user-select: text;
+  }
+  .table-caption { margin: 2px 0 10px; color: var(--fg-3); font-size: 11.5px; }
+  .data-table { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+  .data-table th, .data-table td { padding: 6px 0 6px 16px; text-align: left; vertical-align: top; }
+  .data-table th:first-child, .data-table td:first-child { padding-left: 0; }
+  .data-table thead th {
+    position: sticky; top: 0; z-index: 1; vertical-align: bottom; padding-top: 4px; padding-bottom: 8px;
+    background: var(--bg); color: var(--fg-3); font-size: 11px; font-weight: 400;
+    border-bottom: 1px solid var(--line-2);
+  }
+  .data-table thead th[aria-sort] { color: var(--fg); }
+  .data-table tbody th { font-weight: 400; }
+  .data-table tbody tr { border-bottom: 1px solid var(--line); }
+  .data-table .num { text-align: right; }
+  .data-table td { white-space: nowrap; }
+  .data-table td small { display: block; color: var(--fg-3); font-size: 10.5px; }
+  .data-table td.effort { color: var(--fg-2); }
+  .table-model { display: inline-flex; align-items: center; gap: 8px; font-weight: 550; white-space: nowrap; }
 
   /* ---------- Tooltip ---------- */
   .chart-tooltip {
@@ -201,7 +263,12 @@
   }
   footer a { color: var(--fg-2); }
   .footer-links { display: flex; gap: 20px; white-space: nowrap; }
-  .footer-links a:last-child { color: var(--accent); }
+  .footer-links > a:last-child { color: var(--accent); }
+
+  /* ---------- Full screen ---------- */
+  /* The whole app goes full screen. Without the Fullscreen API it covers the window instead. */
+  .app:fullscreen { background: var(--bg); }
+  .app.fullscreen-fallback { position: fixed; inset: 0; z-index: 1000; background: var(--bg); }
 
   /* ---------- Sidebar ---------- */
   .sidebar {
@@ -290,6 +357,8 @@
     box-shadow: inset 0 0 0 1px; opacity: .5;
   }
   .model-row[aria-pressed="true"] .model-dot { opacity: 1; background: currentColor; }
+  .sheet-options { display: none; }
+  .sheet-options .chart-options { display: contents; }
   .side-note { margin: 0; color: var(--fg-2); font-size: 12px; }
   .side-note[hidden], .browse-options[hidden], .browse-options div[hidden] { display: none; }
   .browse-options {
@@ -335,49 +404,177 @@
     .chart-section { padding-left: 18px; padding-right: 18px; }
     footer { padding: 9px 18px; }
   }
-  /* Narrow screens: one scrolling column. The mobile sheet comes in a later stage. */
+  /* Narrow screens: the window scrolls, the header sticks, the sidebar becomes a full-screen sheet. */
   @media (width <= 900px) {
     .app { display: block; height: auto; }
-    .app-header { flex-wrap: wrap; gap: 0 16px; height: auto; min-height: 52px; padding: 0 16px; }
-    .view-tabs { order: 3; width: 100%; height: 42px; border-top: 1px solid var(--line); }
+    .app-header {
+      position: sticky; top: 0; z-index: 8; flex-wrap: wrap; gap: 0; height: auto; padding: 0;
+      background: var(--bg);
+    }
+    .brand { display: flex; align-items: center; height: 52px; padding-left: 16px; }
+    .brand strong { font-size: 21px; }
+    .header-actions { height: 52px; padding-right: 10px; }
+    .view-tabs { order: 3; width: 100%; height: 42px; gap: 20px; padding: 0 16px; border-top: 1px solid var(--line); }
+    .view-tabs button { font-size: 13.5px; }
+    .desktop-only { display: none !important; }
+    .mobile-only { display: inline-flex !important; align-items: center; gap: 6px; }
+    .mobile-filter-toggle { height: 40px; padding: 0 6px; color: var(--fg); font-size: 14px; }
+    .mobile-filter-toggle svg.icon { width: 14px; height: 14px; }
+    .mobile-filter-toggle .filter-label { color: var(--fg); font-size: 13px; }
+    .mobile-filter-toggle span:last-child { color: var(--fg-3); font-size: 12px; }
+    .help-popover { position: fixed; top: 62px; left: 16px; right: 16px; width: auto; max-width: none; max-height: calc(100dvh - 78px); }
+
     .body-layout, main { display: block; }
     .chart-section { padding: 20px 16px 24px; }
     .chart-heading { flex-wrap: wrap; gap: 4px 16px; }
-    .chart-controls { flex: 1 0 100%; flex-wrap: wrap; justify-content: space-between; gap: 4px 16px; }
+    .chart-heading h2 { flex: 1; font-size: 18px; }
+    .chart-controls { flex: 1 0 100%; flex-wrap: wrap; gap: 0 24px; }
+    .chart-controls .check-button, .chart-scale button { min-height: 44px; }
+    .chart-scale { gap: 10px; margin-left: auto; }
+    .controls-break { display: block; flex-basis: 100%; height: 0; }
     .chart-canvas { flex: none; aspect-ratio: 1 / 1.2; }
-    .sidebar { height: auto; border-left: 0; border-top: 1px solid var(--line); }
-    .brand strong { font-size: 21px; }
+    .table-view { flex: none; overflow-x: auto; overflow-y: hidden; }
+
+    /* The tooltip becomes a card under the legend that sticks to the bottom of the screen. */
+    .chart-tooltip, .chart-tooltip.comparing {
+      position: sticky; top: auto; left: auto; right: auto; bottom: calc(10px + env(safe-area-inset-bottom));
+      z-index: 7; width: auto; max-width: none; margin-top: 14px;
+    }
+    .chart-tooltip:not(.comparing) { display: grid; grid-template-columns: 1fr 1fr; column-gap: 20px; padding: 12px 14px; }
+    .chart-tooltip:not(.comparing) > :not(.tooltip-value) { grid-column: 1 / -1; }
+    .chart-tooltip p { margin-bottom: 6px; }
+    .chart-tooltip a { justify-self: start; margin-top: 6px; }
+
+    .sidebar {
+      position: fixed; inset: 0; z-index: 10; display: none; height: 100dvh;
+      padding: 0 16px calc(24px + env(safe-area-inset-bottom));
+      background: var(--bg); border-left: 0;
+    }
+    .sidebar.open { display: flex; }
+    .side-heading {
+      position: sticky; top: 0; z-index: 1; height: 56px; margin: 0 -16px -6px; padding: 0 16px;
+      background: var(--bg); border-bottom: 1px solid var(--line);
+    }
+    .side-heading h2 { font-size: 17px; }
+    .side-heading .sheet-done {
+      width: auto; height: 40px; padding: 0 4px 0 12px;
+      color: var(--accent); font-size: 15px; font-weight: 550;
+    }
+    .search { height: 42px; }
+    .search input { font-size: 16px; }
+    .search kbd { display: none; }
+    .effort-filter button, .section-head button, .browse-options div button { min-height: 32px; font-size: 14px; }
+    .effort-filter > div { gap: 0 16px; }
+    .effort-filter h3, .section-head h3, .option-section h3, .sheet-options h3 { font-size: 14px; }
+    .model-row { min-height: 44px; font-size: 15px; }
+    .browse-options > button { min-height: 32px; font-size: 14px; }
+    .slider-readout { font-size: 13px; }
+    .sheet-options {
+      display: flex; flex-direction: column; align-items: flex-start; gap: 14px;
+      padding-top: 16px; border-top: 1px solid var(--line);
+    }
+    .sheet-options .check-button { min-height: 32px; font-size: 14px; }
+    html.sheet-open, html.sheet-open body { overflow: hidden; }
+
+    footer { padding: 18px 16px calc(28px + env(safe-area-inset-bottom)); }
     footer, .footer-links { flex-wrap: wrap; white-space: normal; }
   }
   @media (width <= 420px) {
     .brand strong { font-size: 19px; }
     .icon-button { width: 28px; }
+    .header-actions { padding-right: 8px; }
+    .mobile-filter-toggle { gap: 5px; }
   }
+  @media (width <= 370px) {
+    .mobile-filter-toggle .filter-label { display: none; }
+  }
+  [hidden] { display: none !important; }
 </style>
 </head>
 <body>
 <div class="app" id="app">
-  <header class="app-header">
+  <header class="app-header" id="app-header">
     <a class="brand" id="brand" href="intelligence-vs-cost.html" aria-label="Intelligence vs cost, reset all settings">
       <strong><span>intelligence</span> vs cost</strong>
     </a>
     <nav class="view-tabs" id="metric-tabs" aria-label="Benchmark"></nav>
     <div class="header-actions">
       <button class="icon-button" id="theme-toggle" type="button"></button>
-      <button class="icon-button" id="png-button" type="button" title="Download PNG" aria-label="Download PNG">
+      <button class="icon-button desktop-only" id="png-button" type="button" title="Download PNG" aria-label="Download PNG">
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" style="width:15px;height:15px"><path d="M12 3.5v11.5M7 10l5 5 5-5M4 16.5v3.5h16v-3.5"/></svg>
       </button>
-      <button class="icon-button" id="fullscreen-button" type="button" title="Full screen" aria-label="Full screen">
-        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" style="width:15px;height:15px"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg>
-      </button>
+      <button class="icon-button desktop-only" id="fullscreen-button" type="button" title="Full screen" aria-label="Full screen" aria-pressed="false"></button>
       <button class="icon-button" id="table-button" type="button" title="Table view" aria-label="Table view" aria-pressed="false">
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" style="width:15px;height:15px"><rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 10h17M3.5 15h17M9.5 10v9.5"/></svg>
       </button>
-      <button class="icon-button" id="help-button" type="button" title="How to read this chart" aria-label="How to read this chart">
-        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><path d="M9.4 9.3a2.7 2.7 0 0 1 5.2 1c0 1.8-2.6 2.4-2.6 4M12 17.6h.01"/></svg>
-      </button>
-      <button class="icon-button" id="settings-button" type="button" title="Chart settings" aria-label="Chart settings">
-        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" style="width:17px;height:17px"><circle cx="5.5" cy="12" r=".9"/><circle cx="12" cy="12" r=".9"/><circle cx="18.5" cy="12" r=".9"/></svg>
+      <div class="popover-anchor" id="help-anchor">
+        <button class="icon-button" id="help-button" type="button" title="How to read this chart" aria-label="How to read this chart"
+                aria-expanded="false" aria-controls="help-popover">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><path d="M9.4 9.3a2.7 2.7 0 0 1 5.2 1c0 1.8-2.6 2.4-2.6 4M12 17.6h.01"/></svg>
+        </button>
+        <div class="popover help-popover" id="help-popover" role="dialog" aria-labelledby="help-title" hidden>
+          <h2 id="help-title">How to read this chart</h2>
+          <p>Each point is one model variant, usually one reasoning effort level. A line joins the
+            variants of one model family. Point at a variant, or tab to it, to see its details. Click
+            it to pin it, then point at another variant to compare the two.</p>
+          <p>The X axis shows the cost to run one task of the Artificial Analysis Intelligence Index
+            test suite. On the log scale, each grid step to the right multiplies the cost by the same
+            factor. The Y axis shows the benchmark picked in the header. A higher score is better on
+            all of them.</p>
+          <p>The dashed line is the Pareto line. A variant is on it when no other visible variant
+            scores higher for the same or a lower cost. These variants give the best value for money.
+            Zoom Y to Pareto fits the score axis to them.</p>
+
+          <h3>Benchmarks</h3>
+          <ul>
+            <li><strong>Intelligence</strong> is the Artificial Analysis Intelligence Index, a mix of
+              many benchmarks.</li>
+            <li><strong>Coding (SciCode)</strong> is the SciCode benchmark score, scaled from 0 to 100.
+              This page uses SciCode because the models feed no longer supplies the former Coding
+              Index, so the scores are not comparable to that index.</li>
+            <li><strong>Math (AIME 2025)</strong> is the score on the AIME 2025 math contest, from 0 to
+              100. Artificial Analysis removed its old Math Index, and this contest score stands in
+              for it. Only a few models have it.</li>
+            <li><strong>Terminal-Bench v4.0</strong> is the
+              <a href="https://artificialanalysis.ai/evaluations/terminalbench-v4-0" target="_blank" rel="noreferrer">terminal task benchmark</a>
+              score, scaled from 0 to 100.</li>
+            <li><strong>LiveBench Coding and Agentic Coding</strong> come from the
+              <a href="https://livebench.ai/" target="_blank" rel="noreferrer">official LiveBench</a>
+              release 2026_06_25, on a 0 to 100 scale. Coding averages code generation and
+              completion. Agentic Coding averages the JavaScript, TypeScript and Python evaluations.
+              Missing subtasks are skipped, and the details show how many were completed. Only
+              reviewed model and effort matches appear.</li>
+          </ul>
+          <p>Only models with a score for the picked benchmark appear. Whatever the benchmark, the
+            cost axis uses the Intelligence Index task costs and the response time filter uses the
+            Artificial Analysis response times.</p>
+
+          <h3>Subscription plans</h3>
+          <p>The Claude plan prices Anthropic models, and the Codex plan prices OpenAI models that
+            are not open weights. With a plan picked, the page scales the API cost per task by the
+            plan's monthly fee divided by the API value of its allowance. This assumes you use the
+            whole allowance over a long window. It is a comparison estimate, not a provider invoice,
+            and real limits and usage differ.</p>
+
+          <h3>Max response time</h3>
+          <p>Reasoning models can think for minutes before they answer. The slider hides variants
+            whose median end-to-end response time is above the limit. That is the time from the
+            request to the last token of a 500-token answer. Hidden variants stay on the chart as
+            faint dots, and the Pareto line is computed again from the variants that remain.
+            Variants with no measured response time are never hidden.</p>
+        </div>
+      </div>
+      <div class="popover-anchor desktop-only" id="settings-anchor">
+        <button class="icon-button" id="settings-button" type="button" title="Chart settings" aria-label="Chart settings"
+                aria-expanded="false" aria-controls="settings-popover">
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true" style="width:17px;height:17px"><circle cx="5.5" cy="12" r=".9"/><circle cx="12" cy="12" r=".9"/><circle cx="18.5" cy="12" r=".9"/></svg>
+        </button>
+        <div class="popover settings-popover chart-options" id="settings-popover" role="group" aria-label="Chart settings" hidden></div>
+      </div>
+      <button class="mobile-only mobile-filter-toggle" id="sheet-toggle" type="button" aria-expanded="false" aria-controls="sidebar">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 5h11M18 5h3M3 12h5M12 12h9M3 19h13M20 19h1M14 3v4M8 10v4M16 17v4"/></svg>
+        <span class="filter-label">Models</span>
+        <span id="sheet-count"></span>
       </button>
     </div>
   </header>
@@ -395,6 +592,7 @@
               <button type="button" id="scale-linear" aria-pressed="false">Linear</button>
               <button type="button" id="scale-log" aria-pressed="true">Log</button>
             </div>
+            <span class="controls-break" aria-hidden="true"></span>
             <button class="check-button" id="zoom-toggle" type="button" aria-pressed="false"
                     title="Fit the score axis to the models on the Pareto line.">
               <span class="selection"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>Zoom Y to Pareto</button>
@@ -412,26 +610,33 @@
             <p id="empty-text"></p>
             <button class="text-button" id="empty-action" type="button"></button>
           </div>
+          <div class="chart-legend" id="chart-legend" role="group" aria-label="Model families" hidden></div>
           <div class="chart-tooltip" id="tooltip" role="status" hidden></div>
+        </div>
+        <div class="table-view" id="table-view" hidden>
+          <p class="table-caption" id="table-caption"></p>
+          <table class="data-table" id="data-table"></table>
         </div>
       </section>
       <footer>
-        <span>Data from <a href="https://artificialanalysis.ai/" target="_blank" rel="noreferrer">Artificial Analysis</a>
-          and <a href="https://livebench.ai/" target="_blank" rel="noreferrer">LiveBench</a></span>
+        <span>Data from <a href="https://artificialanalysis.ai/" target="_blank" rel="noreferrer">Artificial Analysis</a>.
+          LiveBench scores from <a href="https://livebench.ai/" target="_blank" rel="noreferrer">LiveBench</a>.</span>
         <nav class="footer-links" aria-label="Credits">
-          <a href="https://github.com/lobehub/lobe-icons" target="_blank" rel="noreferrer">Lab logos: LobeHub Icons, MIT licence</a>
-          <a href="https://simpleicons.org/" target="_blank" rel="noreferrer">Xiaomi logo: Simple Icons, CC0</a>
+          <span>Lab logos from <a href="https://github.com/lobehub/lobe-icons" target="_blank" rel="noreferrer">LobeHub Icons</a>
+            (<a href="https://github.com/lobehub/lobe-icons/blob/master/LICENSE" target="_blank" rel="noreferrer">MIT</a>)
+            and <a href="https://simpleicons.org/" target="_blank" rel="noreferrer">Simple Icons</a> (CC0)</span>
           <a href="https://github.com/akaihola/artificialanalysis-ai-parser" target="_blank" rel="noreferrer">Source on GitHub</a>
         </nav>
       </footer>
     </main>
 
-    <aside class="sidebar" id="sidebar" aria-label="Filters">
+    <aside class="sidebar" id="sidebar" aria-label="Models">
       <div class="side-heading">
         <h2>Models<span id="model-count"></span></h2>
         <button type="button" id="reset-selection" title="Reset selection" aria-label="Reset selection">
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.4-5.7L4 8.6M4 3.8v4.8h4.8"/></svg>
         </button>
+        <button type="button" class="mobile-only sheet-done" id="sheet-done">Done</button>
       </div>
       <div class="search">
         <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20.5 20.5l-4.6-4.6"/></svg>
@@ -461,6 +666,10 @@
           <button type="button" id="open-weights" aria-pressed="false">Open weights</button>
         </div>
       </div>
+      <section class="sheet-options" aria-labelledby="sheet-options-heading">
+        <h3 id="sheet-options-heading">Charts</h3>
+        <div class="chart-options" id="sheet-settings"></div>
+      </section>
     </aside>
   </div>
 
@@ -615,6 +824,9 @@ const CONFIG = {
 
   sliderSteps: 200,
   minChartPoints: 3,
+  tapRadius: 40,          // compact chart: a tap pins the nearest point within this many px
+  longPressMs: 500,
+  png: { scale: 2, titleBand: 44, fileName: "intelligence-vs-cost" },
 
   layout: {
     initialSize: { width: 1120, height: 430 },
@@ -898,13 +1110,46 @@ function chartModel(data, s) {
     labels = layoutLabels(entries, geo.Y0, geo.maxLabels);
   }
 
+  // The compact chart lists every family under the plot instead, best score first.
+  let legend = [];
+  if (s.labels && geo.compact) {
+    legend = [...families].map(([family, list]) =>
+      ({ family, anchor: list.reduce((best, r) => (!best || r.y > best.y ? r : best), null) }))
+      .sort((a, b) => b.anchor.y - a.anchor.y);
+  }
+
   return {
     metric, base, rows, visible, ghosts, geo, xd, yd, xs, ys, zoomed,
     xTicks: s.linear ? niceTicks(0, xd[1]) : logTicks(xd[0], xd[1], geo.compact),
     yTicks: niceTicks(yd[0], yd[1]),
-    pareto, paretoIds, paretoFams, families, labels,
+    pareto, paretoIds, paretoFams, families, labels, legend,
     pinned, hovered, active, comparing, highlights, focus, anyEmph, emph,
   };
+}
+
+/** The row nearest to an SVG point, with its distance in SVG units (= CSS px). */
+function nearestRow(rows, xs, ys, x, y) {
+  let best = null;
+  for (const r of rows) {
+    const d = Math.hypot(xs(r.x) - x, ys(r.y) - y);
+    if (!best || d < best.d) best = { row: r, d };
+  }
+  return best;
+}
+
+/** Table view rows: the variants the chart shows, best score first, with a Pareto flag. */
+function tableRows(data, s) {
+  const { visible, ghosts } = buildRows(data, s);
+  const front = new Set(paretoSet(visible).map((r) => r.id));
+  const rows = visible.map((r) => ({ ...r, pareto: front.has(r.id) }))
+    .sort((a, b) => b.y - a.y || a.x - b.x || compareText(a.id, b.id));
+  return { rows, hidden: ghosts.length };
+}
+
+/** PNG file name: the page name, plus the benchmark when it is not the default one. */
+function pngFileName(metricId) {
+  const suffix = metricId === CONFIG.defaults.metric ? "" : "-" + slugify(metricId);
+  return CONFIG.png.fileName + suffix + ".png";
 }
 
 /* ---------- Model browser ---------- */
@@ -1105,6 +1350,12 @@ const state = {
   showAll: false,         // "Show all models" lists the Other group
   openWeights: false,     // ...including open-weights families
   menu: null,             // open context menu: { x, y, title, items, originKey, keyboard, openedAt }
+  popover: null,          // open header popover: "help" or "settings"
+  sheetOpen: false,       // the models sheet on narrow screens
+  tableView: false,       // the table replaces the plot
+  fallbackFullscreen: false,  // full screen without the Fullscreen API
+  exporting: false,       // a PNG export is running
+  exportFailed: false,    // the last PNG export failed
   size: { ...CONFIG.layout.initialSize },
   compact: false,
 };
@@ -1125,14 +1376,26 @@ const els = {
   groups: $("model-groups"), searchNote: $("search-note"), browse: $("browse-options"),
   showAll: $("show-all"), browseToggles: $("browse-toggles"), openWeights: $("open-weights"),
   menu: $("context-menu"),
+  app: $("app"), header: $("app-header"), main: document.querySelector("main"), sidebar: $("sidebar"),
+  png: $("png-button"), fullscreen: $("fullscreen-button"), table: $("table-button"),
+  helpAnchor: $("help-anchor"), helpButton: $("help-button"), helpPopover: $("help-popover"),
+  settingsAnchor: $("settings-anchor"), settingsButton: $("settings-button"), settingsPopover: $("settings-popover"),
+  sheetSettings: $("sheet-settings"), sheetToggle: $("sheet-toggle"), sheetCount: $("sheet-count"), sheetDone: $("sheet-done"),
+  chartWrap: $("chart-wrap"), legend: $("chart-legend"),
+  tableView: $("table-view"), tableCaption: $("table-caption"), dataTable: $("data-table"),
+  sprite: document.querySelector(".logo-sprite"),
 };
 const ICONS = {
   sun: '<circle cx="12" cy="12" r="4.2"/><path d="M12 1.8v2.4M12 19.8v2.4M1.8 12h2.4M19.8 12h2.4M4.8 4.8l1.7 1.7M17.5 17.5l1.7 1.7M4.8 19.2l1.7-1.7M17.5 6.5l1.7-1.7"/>',
   moon: '<path d="M20.5 14.2A8.6 8.6 0 1 1 9.8 3.5a6.8 6.8 0 0 0 10.7 10.7z"/>',
   close: '<path d="M6 6l12 12M18 6L6 18"/>',
+  maximize: '<path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/>',
+  minimize: '<path d="M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5"/>',
+  check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  rotate: '<path d="M4 12a8 8 0 1 0 2.4-5.7L4 8.6M4 3.8v4.8h4.8"/>',
 };
 const icon = (name, size = 16) =>
-  `<svg class="icon" viewBox="0 0 24 24" width="${size}" height="${size}" aria-hidden="true">${ICONS[name]}</svg>`;
+  `<svg class="icon" viewBox="0 0 24 24" style="width:${size}px;height:${size}px" aria-hidden="true">${ICONS[name]}</svg>`;
 
 /** Lab mark for HTML: a logo from the sprite, or a letter monogram. */
 function labMark(lab, labName, size) {
@@ -1286,17 +1549,28 @@ function renderTimeFilter() {
 /* ---------- Chart ---------- */
 let lastChart = null;  // the chart model last drawn, for lookups from events
 
+/** Draw the plot, or the table when the table view is on. */
 function renderChart() {
   if (!state.data) return;
-  const m = chartModel(state.data, state);
-  const showEmpty = m.rows.length < CONFIG.minChartPoints;
-  lastChart = showEmpty ? null : m;
-  renderEmpty(m, showEmpty);
-  els.svg.style.visibility = showEmpty ? "hidden" : "";
-  els.svg.setAttribute("aria-label", `${m.metric.axis} versus cost per task`);
-  setHTML(els.svg, showEmpty ? "" : drawChart(m, themeColors()));
-  els.svg.setAttribute("viewBox", `0 0 ${m.geo.W} ${m.geo.H}`);
-  renderTooltip(showEmpty ? null : m);
+  els.chartWrap.hidden = state.tableView;
+  els.tableView.hidden = !state.tableView;
+  if (state.tableView) {
+    lastChart = null;
+    renderTable();
+  } else {
+    const m = chartModel(state.data, state);
+    const showEmpty = m.rows.length < CONFIG.minChartPoints;
+    lastChart = showEmpty ? null : m;
+    renderEmpty(m, showEmpty);
+    els.svg.style.visibility = showEmpty ? "hidden" : "";
+    els.svg.setAttribute("aria-label", `${m.metric.axis} versus cost per task`);
+    setHTML(els.svg, showEmpty ? "" : drawChart(m, themeColors()));
+    els.svg.setAttribute("viewBox", `0 0 ${m.geo.W} ${m.geo.H}`);
+    renderLegend(lastChart);
+    renderTooltip(lastChart);
+  }
+  renderSettings();
+  renderHeaderButtons();
 }
 
 function drawChart(m, c) {
@@ -1352,7 +1626,9 @@ function drawChart(m, c) {
       const opacity = pareto ? (onFront || isActive || isPinned ? 1 : 0.15)
         : (m.anyEmph || !m.active || isActive || isPinned ? 1 : 0.45);
       const label = `${r.v.name}, ${r.v.effortLabel}, cost per task ${fmtCost(r.x)}, ${metric.axis} ${fmtScore(r.y)}`;
-      g += `<g role="button" tabindex="0" data-key="p:${esc(r.id)}" data-id="${esc(r.id)}" aria-pressed="${isPinned}" aria-label="${esc(label)}" opacity="${opacity}">` +
+      // On the compact chart a tap picks the nearest point, so the points ignore the pointer.
+      const events = geo.compact ? ' pointer-events="none"' : "";
+      g += `<g role="button" tabindex="0" data-key="p:${esc(r.id)}" data-id="${esc(r.id)}" aria-pressed="${isPinned}" aria-label="${esc(label)}" opacity="${opacity}"${events}>` +
         `<circle ${at(r)} r="13" fill="transparent"/>` +
         `<circle ${at(r)} r="${radius}" fill="${color}" stroke="${onFront ? c.fg : c.bg}" stroke-width="${onFront ? 1.5 : 1.8}"/></g>`;
     }
@@ -1400,6 +1676,81 @@ function drawChart(m, c) {
 function xTitle() {
   const planned = CONFIG.plans.some((g) => state.plans[g.key] !== g.options[0].id);
   return `${planned ? "Effective cost" : "Cost"} per task (USD${state.linear ? "" : ", log scale"})`;
+}
+
+/* ---------- Legend (compact chart) ---------- */
+function renderLegend(m) {
+  const entries = m ? m.legend : [];
+  els.legend.hidden = !entries.length;
+  const pareto = m && m.pareto.length > 0;
+  setHTML(els.legend, entries.map(({ family, anchor }) => {
+    const f = state.data.families.get(family);
+    // Same emphasis as the right-side labels on the desktop chart.
+    const dim = pareto ? !m.paretoFams.has(family) : m.anyEmph && !m.emph(family);
+    const cls = (dim ? " dim" : "") + (pareto && m.paretoFams.has(family) ? " on-frontier" : "");
+    return `<button type="button" class="legend-item${cls}" data-key="g:${esc(family)}" data-family="${esc(family)}" aria-pressed="${m.highlights.has(family)}" style="color:${familyColor(family, anchor.v.lab, state.theme)}">` +
+      `${labMark(f.lab, f.labName, 13)}<span>${esc(shortName(f.name))}</span></button>`;
+  }).join(""));
+}
+
+/* ---------- Table view ---------- */
+function renderTable() {
+  const { rows, hidden } = tableRows(state.data, state);
+  const metric = metricById(state.metric);
+  const planned = CONFIG.plans.some((g) => state.plans[g.key] !== g.options[0].id);
+  let caption = rows.length
+    ? `${rows.length} variant${rows.length === 1 ? "" : "s"}, highest ${metric.axis} first.`
+    : `None of the selected variants has ${metric.tab} data.`;
+  if (hidden) caption += ` ${hidden} hidden by the response time limit.`;
+  els.tableCaption.textContent = caption;
+
+  const head = `<thead><tr><th scope="col">Model</th><th scope="col">Reasoning</th>` +
+    CONFIG.metrics.map((mt) => `<th scope="col" class="num"${mt.id === metric.id ? ' aria-sort="descending"' : ""}>${esc(mt.tab)}</th>`).join("") +
+    `<th scope="col" class="num">${planned ? "Effective cost" : "Cost"} per task</th>` +
+    `<th scope="col" class="num">Response time</th><th scope="col">Pareto</th></tr></thead>`;
+  const body = rows.map((r) => {
+    const v = r.v, plan = planFor(v, state.plans);
+    const scores = CONFIG.metrics.map((mt) => {
+      const count = mt.livebench ? v.livebench?.subtasks?.[mt.id] : null;
+      const note = count && v.scores[mt.id] != null ? `<small title="${esc(livebenchNote(v, mt))}">${count.completed}/${count.expected} subtasks</small>` : "";
+      return `<td class="num">${fmtScore(v.scores[mt.id])}${note}</td>`;
+    }).join("");
+    return `<tr><th scope="row"><span class="table-model">${labMark(v.lab, v.labName, 14)}` +
+      `<span style="color:${familyColor(v.family, v.lab, state.theme)}">${esc(v.name)}</span></span></th>` +
+      `<td class="effort">${esc(v.effortLabel)}</td>${scores}` +
+      `<td class="num">${fmtCost(r.x)}${plan ? `<small>API ${fmtCost(v.cost)}</small>` : ""}</td>` +
+      `<td class="num">${fmtSeconds(v.time)}</td><td>${r.pareto ? "Yes" : ""}</td></tr>`;
+  }).join("");
+  setHTML(els.dataTable, head + `<tbody>${body}</tbody>`);
+}
+
+/* ---------- Chart settings (header popover and mobile sheet) ---------- */
+function renderSettings() {
+  const html = `<button type="button" class="check-button" data-key="labels" data-setting="labels" aria-pressed="${state.labels}">` +
+      `<span class="selection">${icon("check")}</span>Labels</button>` +
+    (state.highlights.length
+      ? `<button type="button" class="check-button" data-key="reset-highlights" data-setting="reset-highlights">${icon("rotate", 13)}Reset highlights</button>`
+      : "");
+  setHTML(els.settingsPopover, html);
+  setHTML(els.sheetSettings, html);
+}
+
+/* ---------- Header buttons ---------- */
+function renderHeaderButtons() {
+  els.table.setAttribute("aria-pressed", state.tableView);
+  const fs = isFullscreen();
+  const fsLabel = fs ? "Exit full screen" : "Full screen";
+  if (els.fullscreen.title !== fsLabel || !els.fullscreen.firstChild) {
+    els.fullscreen.innerHTML = icon(fs ? "minimize" : "maximize", 15);
+    els.fullscreen.title = fsLabel;
+    els.fullscreen.setAttribute("aria-label", fsLabel);
+  }
+  els.fullscreen.setAttribute("aria-pressed", fs);
+  els.png.disabled = state.exporting || !lastChart;
+  const pngLabel = state.exportFailed ? "PNG download failed. Try again" : "Download PNG";
+  els.png.title = pngLabel;
+  els.png.setAttribute("aria-label", pngLabel);
+  els.sheetCount.textContent = state.selected.length;
 }
 
 /* ---------- Empty state ---------- */
@@ -1558,6 +1909,177 @@ els.plans.addEventListener("click", (e) => {
   update();
 });
 
+/* ---------- Header: PNG export ---------- */
+// Computed styles copied onto the exported clone, so CSS-dependent paint survives.
+const PNG_STYLE_PROPS = ["fill", "fill-opacity", "stroke", "stroke-width", "stroke-opacity", "stroke-dasharray",
+  "font-family", "font-size", "font-weight", "text-anchor", "dominant-baseline", "opacity", "filter"];
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+/** Standalone SVG markup of the chart with a title band on top. */
+function chartSvgForExport(m) {
+  const { W: w, H: h } = m.geo, band = CONFIG.png.titleBand;
+  const clone = els.svg.cloneNode(true);
+  const src = [els.svg, ...els.svg.querySelectorAll("*")];
+  const dst = [clone, ...clone.querySelectorAll("*")];
+  src.forEach((el, i) => {
+    const cs = getComputedStyle(el);
+    for (const prop of PNG_STYLE_PROPS) {
+      const value = cs.getPropertyValue(prop);
+      if (value) dst[i].setAttribute(prop, value);
+    }
+  });
+  for (const attr of ["style", "class", "id", "role", "aria-label", "tabindex"]) clone.removeAttribute(attr);
+  Object.entries({ x: 0, y: band, width: w, height: h }).forEach(([k, v]) => clone.setAttribute(k, v));
+
+  const root = getComputedStyle(document.documentElement);
+  const wrap = document.createElementNS(SVG_NS, "svg");
+  Object.entries({ viewBox: `0 0 ${w} ${h + band}`, width: w, height: h + band,
+    "font-family": root.fontFamily }).forEach(([k, v]) => wrap.setAttribute(k, v));
+  // The lab logos are <use> references into the page's sprite: bring the sprite along.
+  const defs = document.createElementNS(SVG_NS, "defs");
+  for (const node of els.sprite.children) defs.append(node.cloneNode(true));
+  const bg = document.createElementNS(SVG_NS, "rect");
+  Object.entries({ width: w, height: h + band, fill: root.backgroundColor }).forEach(([k, v]) => bg.setAttribute(k, v));
+  const title = document.createElementNS(SVG_NS, "text");
+  Object.entries({ x: 24, y: 30, "font-size": 18, fill: root.color }).forEach(([k, v]) => title.setAttribute(k, v));
+  title.textContent = m.metric.title;
+  wrap.append(defs, bg, title, clone);
+  return new XMLSerializer().serializeToString(wrap);
+}
+
+/** Rasterise the chart at 2x and download it. */
+async function exportPng() {
+  const m = lastChart;
+  if (state.exporting || !m) return;
+  state.exporting = true;
+  renderHeaderButtons();
+  const urls = [];
+  try {
+    const svgUrl = URL.createObjectURL(new Blob([chartSvgForExport(m)], { type: "image/svg+xml" }));
+    urls.push(svgUrl);
+    const img = new Image();
+    img.src = svgUrl;
+    await img.decode();
+    const k = CONFIG.png.scale;
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.ceil(k * m.geo.W);
+    canvas.height = Math.ceil(k * (m.geo.H + CONFIG.png.titleBand));
+    canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+    const png = await new Promise((resolve, reject) =>
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("canvas.toBlob failed"))), "image/png"));
+    const pngUrl = URL.createObjectURL(png);
+    const a = document.createElement("a");
+    a.href = pngUrl;
+    a.download = pngFileName(m.metric.id);
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(pngUrl), 30000);
+    state.exportFailed = false;
+  } catch (err) {
+    state.exportFailed = true;
+    console.error("PNG export failed:", err);
+  } finally {
+    urls.forEach((u) => URL.revokeObjectURL(u));
+    state.exporting = false;
+    renderHeaderButtons();
+  }
+}
+els.png.addEventListener("click", exportPng);
+
+/* ---------- Header: full screen ---------- */
+function isFullscreen() {
+  return document.fullscreenElement === els.app || state.fallbackFullscreen;
+}
+function setFallbackFullscreen(on) {
+  state.fallbackFullscreen = on;
+  els.app.classList.toggle("fullscreen-fallback", on);
+  renderHeaderButtons();
+}
+function toggleFullscreen() {
+  if (document.fullscreenElement) { document.exitFullscreen().catch(() => {}); return; }
+  if (state.fallbackFullscreen) { setFallbackFullscreen(false); return; }
+  if (els.app.requestFullscreen && document.fullscreenEnabled) {
+    els.app.requestFullscreen().catch(() => setFallbackFullscreen(true));
+  } else {
+    setFallbackFullscreen(true);
+  }
+}
+els.fullscreen.addEventListener("click", toggleFullscreen);
+document.addEventListener("fullscreenchange", renderHeaderButtons);
+
+/* ---------- Header: table view ---------- */
+els.table.addEventListener("click", () => {
+  state.tableView = !state.tableView;
+  state.hovered = state.labelHover = null;
+  renderChart();
+});
+
+/* ---------- Header: popovers ---------- */
+const POPOVERS = {
+  help: { anchor: els.helpAnchor, button: els.helpButton, panel: els.helpPopover },
+  settings: { anchor: els.settingsAnchor, button: els.settingsButton, panel: els.settingsPopover },
+};
+/** Open one popover (or none). Closing can return focus to the popover's button. */
+function setPopover(name, restoreFocus = false) {
+  const prev = state.popover;
+  state.popover = name;
+  for (const [key, p] of Object.entries(POPOVERS)) {
+    p.panel.hidden = key !== name;
+    p.button.setAttribute("aria-expanded", key === name);
+  }
+  if (!name && prev && restoreFocus) POPOVERS[prev].button.focus();
+}
+els.helpButton.addEventListener("click", () => setPopover(state.popover === "help" ? null : "help"));
+els.settingsButton.addEventListener("click", () => setPopover(state.popover === "settings" ? null : "settings"));
+window.addEventListener("pointerdown", (e) => {
+  if (state.popover && !POPOVERS[state.popover].anchor.contains(e.target)) setPopover(null);
+});
+
+// The same settings appear in the popover and, on narrow screens, in the models sheet.
+function onSettingClick(e) {
+  const setting = e.target.closest("[data-setting]")?.dataset.setting;
+  if (setting === "labels") {
+    state.labels = !state.labels;
+    state.labelHover = null;
+    update();
+  } else if (setting === "reset-highlights") {
+    state.highlights = [];
+    renderChart();
+    // The button is gone; keep focus inside the settings.
+    if (!e.currentTarget.contains(document.activeElement)) byKey(e.currentTarget, "labels")?.focus();
+  }
+}
+els.settingsPopover.addEventListener("click", onSettingClick);
+els.sheetSettings.addEventListener("click", onSettingClick);
+
+/* ---------- Models sheet (narrow screens) ---------- */
+/** Open or close the full-screen models sheet. Closing can return focus to its toggle. */
+function setSheet(open, restoreFocus = false) {
+  state.sheetOpen = open;
+  renderSheet();
+  if (open && lastInput === "keyboard") els.sheetDone.focus();
+  if (!open && restoreFocus && state.compact) els.sheetToggle.focus();
+}
+function renderSheet() {
+  const open = state.sheetOpen && state.compact;
+  els.sidebar.classList.toggle("open", open);
+  document.documentElement.classList.toggle("sheet-open", open);
+  els.sheetToggle.setAttribute("aria-expanded", open);
+  if (open) {
+    els.sidebar.setAttribute("role", "dialog");
+    els.sidebar.setAttribute("aria-modal", "true");
+  } else {
+    els.sidebar.removeAttribute("role");
+    els.sidebar.removeAttribute("aria-modal");
+  }
+  // While the sheet covers the page, the page behind it is out of reach.
+  els.header.inert = open;
+  els.main.inert = open;
+}
+els.sheetToggle.addEventListener("click", () => setSheet(true));
+els.sheetDone.addEventListener("click", () => setSheet(false, true));
+
 /* ---------- Model browser events ---------- */
 els.search.addEventListener("input", () => {
   state.query = els.search.value;
@@ -1644,14 +2166,35 @@ function toggleHighlight(family) {
 // While the context menu is open, the pointer does not hover the chart or the rows.
 els.svg.addEventListener("pointerover", (e) => { if (!state.menu) setHover(pointOf(e.target), labelOf(e.target)); });
 els.svg.addEventListener("pointerleave", () => setHover(null, null));
-els.svg.addEventListener("focusin", (e) => { if (!rendering) setHover(pointOf(e.target), labelOf(e.target)); });
-els.svg.addEventListener("focusout", (e) => {
+// Focus listeners sit on the canvas: Chromium makes an <svg> with focus listeners click-focusable.
+els.canvas.addEventListener("focusin", (e) => { if (!rendering) setHover(pointOf(e.target), labelOf(e.target)); });
+els.canvas.addEventListener("focusout", (e) => {
   if (!rendering && !els.svg.contains(e.relatedTarget)) setHover(null, null);
 });
+/** The visible row within the tap radius of a client point on the compact chart, or null. */
+function rowNear(clientX, clientY) {
+  const ctm = els.svg.getScreenCTM();
+  if (!lastChart || !ctm) return null;
+  const p = new DOMPoint(clientX, clientY).matrixTransform(ctm.inverse());
+  const hit = nearestRow(lastChart.visible, lastChart.xs, lastChart.ys, p.x, p.y);
+  return hit && hit.d < CONFIG.tapRadius ? hit.row : null;
+}
 els.svg.addEventListener("click", (e) => {
+  if (state.compact) {
+    // A tap pins the nearest point, or unpins when nothing is near. Tapping again keeps the pin.
+    const hit = rowNear(e.clientX, e.clientY);
+    state.hovered = null;
+    state.pinned = hit ? hit.id : null;
+    renderChart();
+    return;
+  }
   const id = pointOf(e.target), family = labelOf(e.target);
   if (id) togglePin(id);
   else if (family) toggleHighlight(family);
+});
+els.legend.addEventListener("click", (e) => {
+  const family = e.target.closest(".legend-item")?.dataset.family;
+  if (family) toggleHighlight(family);
 });
 els.svg.addEventListener("keydown", (e) => {
   const id = pointOf(e.target), family = labelOf(e.target);
@@ -1668,8 +2211,8 @@ els.tooltip.addEventListener("click", (e) => {
 /* ---------- Context menu ---------- */
 // The model a context menu opens for: a sidebar row's family, a point's variant, or a
 // label's anchor variant. Null means the chart background; undefined means not ours.
-function menuTarget(target) {
-  const row = target.closest?.(".model-row");
+function menuTarget(target, clientX, clientY) {
+  const row = target.closest?.(".model-row, .legend-item");
   if (row) {
     const f = state.data.families.get(row.dataset.family);
     return { origin: row, model: { family: f.id, name: f.name, lab: f.lab, labName: f.labName } };
@@ -1681,7 +2224,10 @@ function menuTarget(target) {
     const entry = lastChart?.labels.find((l) => l.family === label.dataset.label);
     return { origin: label, model: entry ? entry.anchor.v : null };
   }
-  return els.svg.contains(target) ? { origin: null, model: null } : undefined;
+  if (!els.svg.contains(target)) return undefined;
+  // The compact chart's points ignore the pointer: use the point nearest to the press.
+  const near = state.compact && clientX != null ? rowNear(clientX, clientY) : null;
+  return { origin: null, model: near ? near.v : null };
 }
 
 // The last input: "keyboard", or the pointerType of the last pointerdown.
@@ -1690,7 +2236,7 @@ window.addEventListener("keydown", () => { lastInput = "keyboard"; }, true);
 window.addEventListener("pointerdown", (e) => { lastInput = e.pointerType || "mouse"; }, true);
 
 function openMenu(target, clientX, clientY) {
-  const t = menuTarget(target);
+  const t = menuTarget(target, clientX, clientY);
   if (t === undefined) return false;
   const keyboard = lastInput === "keyboard";
   let x = clientX, y = clientY;
@@ -1741,6 +2287,7 @@ function onContextMenu(e) {
 }
 els.svg.addEventListener("contextmenu", onContextMenu);
 els.groups.addEventListener("contextmenu", onContextMenu);
+els.legend.addEventListener("contextmenu", onContextMenu);
 
 els.menu.addEventListener("contextmenu", (e) => e.preventDefault());
 els.menu.addEventListener("click", (e) => {
@@ -1779,7 +2326,7 @@ window.addEventListener("scroll", (e) => {
 
 // Touch: a long press opens the menu; the click that follows it is swallowed.
 const touchPress = { timer: 0, x: 0, y: 0, swallowClick: false };
-const LONG_PRESS = { ms: 500, slop: 10 };
+const LONG_PRESS = { ms: CONFIG.longPressMs, slop: 10 };
 function cancelLongPress() { clearTimeout(touchPress.timer); touchPress.timer = 0; }
 function startLongPress(e) {
   touchPress.swallowClick = false;
@@ -1794,6 +2341,7 @@ function startLongPress(e) {
 }
 els.svg.addEventListener("pointerdown", startLongPress);
 els.groups.addEventListener("pointerdown", startLongPress);
+els.legend.addEventListener("pointerdown", startLongPress);
 window.addEventListener("pointermove", (e) => {
   if (touchPress.timer && Math.hypot(e.clientX - touchPress.x, e.clientY - touchPress.y) > LONG_PRESS.slop) cancelLongPress();
 });
@@ -1807,26 +2355,32 @@ window.addEventListener("click", (e) => {
 }, true);
 
 /* ---------- Keyboard ---------- */
-/** Escape undoes the innermost thing: the menu, then search text, then chart emphasis. */
-function handleEscape() {
+/**
+ * Escape undoes the innermost thing: the context menu or a popover, the models sheet,
+ * the search text, chart emphasis (pin, hover, highlights), then fallback full screen.
+ * Typing in the search box makes its text the innermost thing.
+ */
+function handleEscape(target) {
+  const clearSearch = () => { state.query = ""; renderModelBrowser(); return true; };
   if (state.menu) { closeMenu(); return true; }
-  if (state.query) {
-    state.query = "";
-    renderModelBrowser();
-    return true;
-  }
+  if (state.popover) { setPopover(null, true); return true; }
+  if (target === els.search && state.query) return clearSearch();
+  if (state.sheetOpen && state.compact) { setSheet(false, true); return true; }
+  if (state.query) return clearSearch();
   if (state.pinned || state.hovered || state.labelHover || state.highlights.length) {
     Object.assign(state, { pinned: null, hovered: null, labelHover: null, highlights: [] });
     renderChart();
     return true;
   }
+  if (state.fallbackFullscreen) { setFallbackFullscreen(false); return true; }
   return false;
 }
 window.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
-    if (handleEscape()) e.preventDefault();
+    if (handleEscape(e.target)) e.preventDefault();
   } else if (e.key === "/" && !(e.target instanceof HTMLInputElement) && state.data) {
     e.preventDefault();
+    if (state.compact) setSheet(true);
     els.search.focus();
   }
 });
@@ -1834,10 +2388,20 @@ window.addEventListener("keydown", (e) => {
 /* ---------- Size ---------- */
 const compactQuery = matchMedia("(max-width: 900px)");
 state.compact = compactQuery.matches;
-compactQuery.addEventListener("change", () => { state.compact = compactQuery.matches; renderChart(); });
+compactQuery.addEventListener("change", () => {
+  state.compact = compactQuery.matches;
+  // The sheet exists only on narrow screens; the settings popover and full screen only on wide ones.
+  if (!state.compact) state.sheetOpen = false;
+  else if (state.fallbackFullscreen) setFallbackFullscreen(false);
+  closeMenu(false);
+  setPopover(null);
+  renderSheet();
+  renderChart();
+});
 new ResizeObserver(([entry]) => {
   const width = Math.floor(entry.contentRect.width), height = Math.floor(entry.contentRect.height);
-  if (width === state.size.width && height === state.size.height) return;
+  // A hidden canvas (table view) measures 0 x 0: keep the last real size.
+  if (!width || !height || (width === state.size.width && height === state.size.height)) return;
   state.size = { width, height };
   renderChart();
 }).observe(els.canvas);
@@ -1846,6 +2410,7 @@ new ResizeObserver(([entry]) => {
 document.getElementById("brand").href = location.pathname;
 renderHeader();
 renderToolbar();
+renderHeaderButtons();
 fetch("models.json")
   .then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
   .then((models) => {
@@ -1870,7 +2435,7 @@ window.__chart = {
   geometry, xDomain, yDomain, linearScale, logScale, niceTicks, logTicks, paretoSet,
   layoutLabels, buildRows, chartModel, decodeUrl, encodeUrl,
   compareFamilies, familyLists, sidebarGroups, listedFamilies, curatedSet, toggleAll, effortLevels,
-  menuItems, labDisplayName,
+  menuItems, labDisplayName, nearestRow, tableRows, pngFileName,
 };
 </script>
 </body>

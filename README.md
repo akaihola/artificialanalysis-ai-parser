@@ -217,6 +217,10 @@ To use the page:
 
 The sidebar lists the model families that have cost data: the curated Frontier and Notable lists, and every other family under "Show all models". Click a family to show or hide it. Type in the search box, or press `/`, to find a family by name or lab. Right-click a family or a point, or long-press it on a touch screen, for more options, such as showing only one lab.
 
+The buttons at the right of the header switch between light and dark themes, download the chart as a PNG image, show the whole page full screen, and replace the chart with a table of the same variants. The table lists every score, the cost per task and the response time, sorted by the selected benchmark. The `?` button opens the help text, and the `…` button turns the family labels on or off and clears highlights.
+
+On a phone, or in a window 900 pixels wide or less, the sidebar moves into a full-screen sheet behind the "Models" button, together with the plan selectors and the response time slider. A two-column legend under the chart takes the place of the labels. Tap near a point to see its details in a card at the bottom of the screen.
+
 The page has no build step and no script dependencies; it loads the DM Sans font from Google Fonts. It also has tooltips, keyboard navigation, and light and dark themes.
 
 ## License
