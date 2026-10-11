@@ -12,6 +12,7 @@ import functools
 import http.server
 import json
 import re
+import struct
 import threading
 import unittest
 from pathlib import Path
@@ -1077,6 +1078,47 @@ class PageTests(unittest.TestCase):
         page.click("#table-button")
         self.assertTrue(page.is_visible("#chart-wrap"))
         self.assertTrue(page.is_hidden("#table-view"))
+
+    def test_png_export(self):
+        page = self.open("?metric=coding_index")
+        with page.expect_download() as info:
+            page.click("#png-button")
+        download = info.value
+        self.assertEqual(download.suggested_filename, "intelligence-vs-cost-coding-index.png")
+        data = Path(download.path()).read_bytes()
+        self.assertEqual(data[:8], b"\x89PNG\r\n\x1a\n")
+        width, height = struct.unpack(">II", data[16:24])
+        box = page.evaluate("(() => { const b = document.getElementById('chart').viewBox.baseVal; return [b.width, b.height]; })()")
+        # Twice the chart size, with a 44 px title band on top.
+        self.assertEqual([width, height], [2 * box[0], 2 * (box[1] + 44)])
+        self.assertEqual(page.get_attribute("#png-button", "title"), "Download PNG")
+        self.assertTrue(page.is_enabled("#png-button"))
+
+    def test_resize_across_the_breakpoint(self):
+        page = self.open()
+        page.click('#chart [data-id="grok-4-7"]')
+        chart_width = "document.getElementById('chart').viewBox.baseVal.width"
+        page.set_viewport_size(MOBILE)
+        page.wait_for_function(f"__chart.state.compact && {chart_width} < {MOBILE['width']}")
+        self.assertEqual(page.locator(".series-label").count(), 0)
+        self.assertEqual(page.locator("#chart-legend button").count(), 8)
+        self.assertTrue(page.is_hidden("#sidebar"))
+        self.assertTrue(page.is_hidden("#png-button"))
+        self.assertEqual(self.state(page, "pinned"), "grok-4-7")
+        self.assertEqual(page.eval_on_selector("#tooltip", "e => getComputedStyle(e).position"), "sticky")
+        page.click("#sheet-toggle")
+        self.assertTrue(page.is_visible("#sidebar"))
+        self.assertTrue(page.evaluate("document.getElementById('app-header').inert"))
+
+        page.set_viewport_size(DESKTOP)
+        page.wait_for_function(f"!__chart.state.compact && {chart_width} > 1000")
+        self.assertEqual(page.locator(".series-label").count(), 8)
+        self.assertTrue(page.is_hidden("#chart-legend"))
+        self.assertTrue(page.is_visible("#sidebar"))
+        self.assertFalse(self.state(page, "sheetOpen"))
+        self.assertFalse(page.evaluate("document.getElementById('app-header').inert"))
+        self.assertEqual(page.eval_on_selector("#tooltip", "e => getComputedStyle(e).position"), "absolute")
+        self.assertLessEqual(page.evaluate("document.documentElement.scrollWidth"), DESKTOP["width"])
 
     def test_theme_follows_system_and_persists(self):
         page = self.open(color_scheme="light")
