@@ -1046,7 +1046,8 @@ class PageTests(unittest.TestCase):
         text = " ".join(page.text_content("#help-popover").split())
         self.assertIn("On a touch screen, tap near a variant to pin it", text)
         self.assertIn("each tenfold step in cost takes the same width", text)
-        self.assertIn("every other visible variant that costs the same or less scores lower", text)
+        self.assertIn("scores higher than every visible variant that costs less, and no variant at the same cost"
+                      " scores higher. When variants tie on both cost and score, one of them is on the line.", text)
         self.assertIn("Deprecated models are hidden unless Show deprecated is on", text)
         # Focus moving on inside the popover keeps it open; leaving it closes it.
         page.keyboard.press("Tab")
@@ -1464,8 +1465,10 @@ class PageTests(unittest.TestCase):
         page = self.open()
         front = page.evaluate("""() => __chart.paretoSet([
             { id: 'a', x: 1, y: 1 }, { id: 'b', x: 2, y: 3 }, { id: 'c', x: 2, y: 2 }, { id: 'd', x: 3, y: 3 },
-            { id: 'e', x: 0.5, y: 0.5 }, { id: 'f', x: 4, y: 5 }, { id: 'g', x: null, y: 9 }]).map((r) => r.id)""")
-        # c is beaten at the same cost, d ties b at a higher cost, g has no cost.
+            { id: 'e', x: 0.5, y: 0.5 }, { id: 'f', x: 4, y: 5 }, { id: 'g', x: null, y: 9 },
+            { id: 'h', x: 2, y: 3 }]).map((r) => r.id)""")
+        # c is beaten at the same cost, d ties b at a higher cost, g has no cost, and of the
+        # identical b and h only the first is kept.
         self.assertEqual(front, ["e", "a", "b", "f"])
         self.assertEqual(page.evaluate("__chart.paretoSet([])"), [])
 

@@ -541,9 +541,10 @@
             test suite. On the log scale, equal distances stand for equal cost ratios: each tenfold
             step in cost takes the same width. The Y axis shows the benchmark picked in the header.
             A higher score is better on all of them.</p>
-          <p>The dashed line is the Pareto line. A variant is on it when every other visible variant
-            that costs the same or less scores lower. These variants give the best value for money.
-            Zoom Y to Pareto fits the score axis to them.</p>
+          <p>The dashed line is the Pareto line. A variant is on it when it scores higher than every
+            visible variant that costs less, and no variant at the same cost scores higher. When
+            variants tie on both cost and score, one of them is on the line. These variants give the
+            best value for money. Zoom Y to Pareto fits the score axis to them.</p>
 
           <h3>Benchmarks</h3>
           <ul>
@@ -1086,7 +1087,10 @@ function fitLogTicks(min, max, compact, xs, width, gap = CONFIG.minTickGap) {
   return candidates.find((t) => t.length > 1 && fits(t)) || candidates[0];
 }
 
-/** Non-dominated rows: sorted by cost, kept when the score beats every cheaper row. */
+/**
+ * Non-dominated rows, as slopalytics: sorted by cost, ties by score descending, a row is kept
+ * when its score beats every row before it. Of identical rows the first one is kept.
+ */
 function paretoSet(rows) {
   const sorted = rows.filter((r) => r.x != null && r.y != null).sort((a, b) => a.x - b.x || b.y - a.y);
   const front = [];
