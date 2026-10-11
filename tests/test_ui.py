@@ -241,7 +241,7 @@ class PageTests(unittest.TestCase):
     def table(page):
         """Table view body as {"Name (effort)": [[cell text, note or None], ...]}."""
         return page.evaluate("""() => Object.fromEntries([...document.querySelectorAll('#data-table tbody tr')]
-            .map((tr) => [tr.querySelector('th').textContent.trim() + ' (' + tr.querySelector('td.effort').textContent + ')',
+            .map((tr) => [tr.querySelector('th .table-model').textContent.trim() + ' (' + tr.querySelector('td.effort').textContent + ')',
                 [...tr.querySelectorAll('td')].map((td) => [td.firstChild?.textContent ?? '',
                   td.querySelector('small')?.textContent ?? null])]))""")
 
@@ -1011,6 +1011,25 @@ class PageTests(unittest.TestCase):
         page.keyboard.press("Escape")
         self.assertEqual(snapshot(), [False, False, "", None, [], False])
 
+    def test_help_popover(self):
+        page = self.open()
+        page.focus("#help-button")
+        page.keyboard.press("Enter")
+        self.assertTrue(page.is_visible("#help-popover"))
+        self.assertIsNone(page.get_attribute("#help-popover", "role"))
+        self.assertEqual(page.get_attribute("#help-button", "aria-expanded"), "true")
+        text = " ".join(page.text_content("#help-popover").split())
+        self.assertIn("On a touch screen, tap near a variant to pin it", text)
+        self.assertIn("each tenfold step in cost takes the same width", text)
+        self.assertIn("every other visible variant that costs the same or less scores lower", text)
+        self.assertIn("Deprecated models are hidden unless Show deprecated is on", text)
+        # Focus moving on inside the popover keeps it open; leaving it closes it.
+        page.keyboard.press("Tab")
+        self.assertTrue(page.is_visible("#help-popover"))
+        page.focus("#theme-toggle")
+        self.assertTrue(page.is_hidden("#help-popover"))
+        self.assertEqual(page.get_attribute("#help-button", "aria-expanded"), "false")
+
     def test_table_view(self):
         page = self.open()
         page.click("#table-button")
@@ -1034,6 +1053,11 @@ class PageTests(unittest.TestCase):
             ["57", None], ["47", None], ["—", None], ["—", None], ["80.5", "2/2 subtasks"], ["57.3", "3/3 subtasks"],
             ["$3.00", None]])
         self.assertEqual(table["GPT-6 Luna (low)"][-2], ["—", None])
+        # The lab is text under the model name; LiveBench cells name their source model.
+        self.assertEqual(page.text_content("#data-table tbody tr:first-child th small"), "Anthropic")
+        astra = page.locator("#data-table tbody tr", has_text="GPT-6 Astra").first
+        self.assertEqual(astra.locator("td").nth(5).locator("small").all_text_contents(),
+                         ["2/2 subtasks", "gpt-6-astra-max"])
 
         # Sidebar filters, the speed limit and the benchmark apply.
         page.click('.model-row[data-family="claude-opus-5-5"]')
@@ -1044,6 +1068,8 @@ class PageTests(unittest.TestCase):
         self.set_slider(page, 200)
         page.click('#metric-tabs [data-key="livebench_coding"]')
         self.assertEqual(list(self.table(page)), ["GPT-6 Astra (max)", "GPT-6 Astra (medium)"])
+        self.assertEqual(page.text_content("#table-caption"),
+                         "2 variants, highest LiveBench Coding score first. LiveBench release 2026_06_25.")
         self.assertEqual(page.get_attribute("#data-table thead th:nth-child(7)", "aria-sort"), "descending")
         page.click('#metric-tabs [data-key="math_index"]')
         self.assertEqual(page.text_content("#table-caption"), "None of the selected variants has Math (AIME 2025) data.")

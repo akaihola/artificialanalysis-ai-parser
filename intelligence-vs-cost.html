@@ -212,7 +212,8 @@
   .data-table tbody tr { border-bottom: 1px solid var(--line); }
   .data-table .num { text-align: right; }
   .data-table td { white-space: nowrap; }
-  .data-table td small { display: block; color: var(--fg-3); font-size: 10.5px; }
+  .data-table td small, .data-table th small { display: block; color: var(--fg-3); font-size: 10.5px; }
+  .data-table th small { padding-left: 22px; }
   .data-table td.effort { color: var(--fg-2); }
   .table-model { display: inline-flex; align-items: center; gap: 8px; font-weight: 550; white-space: nowrap; }
 
@@ -527,17 +528,21 @@
                 aria-expanded="false" aria-controls="help-popover">
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><path d="M9.4 9.3a2.7 2.7 0 0 1 5.2 1c0 1.8-2.6 2.4-2.6 4M12 17.6h.01"/></svg>
         </button>
-        <div class="popover help-popover" id="help-popover" role="dialog" aria-labelledby="help-title" hidden>
+        <div class="popover help-popover" id="help-popover" hidden>
           <h2 id="help-title">How to read this chart</h2>
           <p>Each point is one model variant, usually one reasoning effort level. A line joins the
             variants of one model family. Point at a variant, or tab to it, to see its details. Click
-            it to pin it, then point at another variant to compare the two.</p>
+            it to pin it, then point at another variant to compare the two. Right-click a variant, a
+            label or a model row for more actions.</p>
+          <p>On a touch screen, tap near a variant to pin it and see its details, and tap a legend
+            entry to highlight its family. Long-press a variant, legend entry or model row for more
+            actions.</p>
           <p>The X axis shows the cost to run one task of the Artificial Analysis Intelligence Index
-            test suite. On the log scale, each grid step to the right multiplies the cost by the same
-            factor. The Y axis shows the benchmark picked in the header. A higher score is better on
-            all of them.</p>
-          <p>The dashed line is the Pareto line. A variant is on it when no other visible variant
-            scores higher for the same or a lower cost. These variants give the best value for money.
+            test suite. On the log scale, equal distances stand for equal cost ratios: each tenfold
+            step in cost takes the same width. The Y axis shows the benchmark picked in the header.
+            A higher score is better on all of them.</p>
+          <p>The dashed line is the Pareto line. A variant is on it when every other visible variant
+            that costs the same or less scores lower. These variants give the best value for money.
             Zoom Y to Pareto fits the score axis to them.</p>
 
           <h3>Benchmarks</h3>
@@ -563,6 +568,8 @@
           <p>Only models with a score for the picked benchmark appear. Whatever the benchmark, the
             cost axis uses the Intelligence Index task costs and the response time filter uses the
             Artificial Analysis response times.</p>
+          <p>Deprecated models are hidden unless <strong>Show deprecated</strong> is on, so some
+            benchmarks, such as Math (AIME 2025), show only a few points by default.</p>
 
           <h3>Subscription plans</h3>
           <p>The Claude plan prices Anthropic models, and the Codex plan prices OpenAI models that
@@ -601,7 +608,7 @@
           <h2 id="chart-title" tabindex="-1">Cost vs intelligence</h2>
           <div class="chart-controls" id="chart-controls">
             <button class="check-button" id="pareto-toggle" type="button" aria-pressed="true"
-                    title="Show non-dominated variants: no other visible variant scores higher for the same or a lower cost.">
+                    title="Show non-dominated variants: every other visible variant that costs the same or less scores lower.">
               <span class="selection"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></span>Pareto line</button>
             <div class="chart-scale" role="group" aria-label="Cost axis scale">
               <button type="button" id="scale-linear" aria-pressed="false">Linear</button>
@@ -1816,6 +1823,8 @@ function renderTable() {
     ? `${rows.length} variant${rows.length === 1 ? "" : "s"}, highest ${metric.axis} first.`
     : `None of the selected variants has ${metric.tab} data.`;
   if (hidden) caption += ` ${hidden} hidden by the response time limit.`;
+  const release = metric.livebench && rows.find((r) => r.v.livebench)?.v.livebench.release;
+  if (release) caption += ` LiveBench release ${release}.`;
   els.tableCaption.textContent = caption;
 
   const head = `<thead><tr><th scope="col">Model</th><th scope="col">Reasoning</th>` +
@@ -1826,11 +1835,14 @@ function renderTable() {
     const v = r.v, plan = planFor(v, state.plans);
     const scores = CONFIG.metrics.map((mt) => {
       const count = mt.livebench ? v.livebench?.subtasks?.[mt.id] : null;
-      const note = count && v.scores[mt.id] != null ? `<small title="${esc(livebenchNote(v, mt))}">${count.completed}/${count.expected} subtasks</small>` : "";
+      const note = count && v.scores[mt.id] != null
+        ? `<small title="${esc(livebenchNote(v, mt))}">${count.completed}/${count.expected} subtasks</small><small>${esc(v.livebench.source_model)}</small>`
+        : "";
       return `<td class="num">${fmtScore(v.scores[mt.id])}${note}</td>`;
     }).join("");
     return `<tr><th scope="row"><span class="table-model">${labMark(v.lab, v.labName, 14)}` +
-      `<span style="color:${familyColor(v.family, v.lab, state.theme)}">${esc(v.name)}</span></span></th>` +
+      `<span style="color:${familyColor(v.family, v.lab, state.theme)}">${esc(v.name)}</span></span>` +
+      `<small>${esc(labDisplayName(v.lab, v.labName))}</small></th>` +
       `<td class="effort">${esc(v.effortLabel)}</td>${scores}` +
       `<td class="num">${fmtCost(r.x)}${plan ? `<small>API ${fmtCost(v.cost)}</small>` : ""}</td>` +
       `<td class="num">${fmtSeconds(v.time)}</td><td>${r.pareto ? "Yes" : ""}</td></tr>`;
@@ -2199,6 +2211,12 @@ function setPopover(name, restoreFocus = false) {
   if (!name && prev && restoreFocus) POPOVERS[prev].button.focus();
 }
 els.helpButton.addEventListener("click", () => setPopover(state.popover === "help" ? null : "help"));
+// The popovers are disclosures: moving focus out of one and its button closes it.
+for (const [name, p] of Object.entries(POPOVERS)) {
+  p.anchor.addEventListener("focusout", (e) => {
+    if (state.popover === name && e.relatedTarget && !p.anchor.contains(e.relatedTarget)) setPopover(null);
+  });
+}
 els.settingsButton.addEventListener("click", () => setPopover(state.popover === "settings" ? null : "settings"));
 window.addEventListener("pointerdown", (e) => {
   if (state.popover && !POPOVERS[state.popover].anchor.contains(e.target)) setPopover(null);
