@@ -15,9 +15,10 @@ In August 2026 the site changed its data model again. The `hostsModels` key is g
 The Python parser in this project:
 
 - **Extracts** the `rows` array from the RSC stream with a standard JSON decoder
-- **Deduplicates** ~1,100 host-model pairs down to ~400 unique models. For each model, it prefers the endpoint of the model creator. If there is none, it takes the complete endpoint with the lowest cost per task
+- **Deduplicates** ~1,100 host-model pairs down to ~470 unique models. For each model, it prefers the endpoint of the model creator. If there is none, it takes the endpoint with the lowest cost per task. Endpoints with a zero price count only when no host has prices. The chosen endpoint supplies the provider and prices
+- **Joins** model-level data from the models leaderboard: benchmark scores, cost per task and performance (one value per model variant), plus the family, lab and release date from the site navigation in the same stream
 - **Cleans** the output to only essential fields (pricing, IQ, speed, cost per task, response time, context window)
-- **Outputs** `models.json` — ~390 models with pricing, ready for downstream use
+- **Outputs** `models.json` — about 450 models with pricing, ready for downstream use
 
 The result is a self-contained Python script with zero dependencies beyond the standard library.
 
@@ -30,6 +31,8 @@ python3 artificialanalysis.ai-parser.py --minimal --pretty
 ```
 
 ### Output
+
+Example output from an earlier run; the counts change with the data:
 
 ```
 Downloading RSC data from https://artificialanalysis.ai/leaderboards/providers?_rsc=hgvan ...
@@ -54,8 +57,15 @@ Each entry:
 |---|---|
 | `name` | Model name |
 | `creator` | AI lab / company |
-| `provider` | The API host that the numbers come from |
-| `slug` | URL-friendly identifier |
+| `provider` | The API host that the prices come from |
+| `slug` | URL-friendly identifier of the model variant (AA model slug) |
+| `family` | AA release slug that groups the effort variants of one model, e.g. `claude-opus-5-5` |
+| `family_name` | AA release name, e.g. "Claude Opus 5.5" |
+| `lab` | Creator slug from the AA release, e.g. `anthropic` |
+| `lab_name` | Creator name from the AA release |
+| `released` | Release date, `YYYY-MM-DD` |
+| `effort` | Reasoning effort parsed from the AA model name: `minimal`, `low`, `medium`, `high`, `xhigh` or `max`; `none` for "Non-reasoning" and other non-reasoning models; `default` for reasoning models without an effort |
+| `effort_order` | Sort key for `effort`: none 0, minimal 10, low 20, medium 30, default 35, high 40, xhigh 50, max 60 |
 | `intelligence_index` | AA Intelligence Index score |
 | `coding_index` | SciCode score scaled to 0–100, joined from the models leaderboard |
 | `terminalbench_v4_0` | Terminal-Bench v4.0 score scaled to 0–100, joined from the models leaderboard; null when unavailable |
@@ -63,15 +73,15 @@ Each entry:
 | `livebench_agentic_coding` | LiveBench Agentic Coding average, 0–100; null without a reviewed model/effort match |
 | `livebench` | Source model, release, commit, retrieval time, effort, revision, agent, and completed/expected subtasks; null when unmatched |
 | `math_index` | AIME 2025 math contest score (0–100). The site removed its Math Index, so this is the stand-in |
-| `cost_per_task` | Cost to run one task of the AA Intelligence Index suite (USD) |
+| `cost_per_task` | Cost to run one task of the AA Intelligence Index suite (USD), model-level (AA's representative host and price) |
 | `price_1m_input_tokens` | Input price per 1M tokens (USD) |
 | `price_1m_output_tokens` | Output price per 1M tokens (USD) |
 | `price_1m_cache_hit` | Cache hit price per 1M tokens (USD) |
 | `blended_price_3_1` | Blended price at 3:1 input:output ratio |
 | `context_window_tokens` | Context window size |
-| `output_tokens_per_second` | Generation speed |
-| `time_to_first_token_ms` | Latency to first token |
-| `e2e_response_time_s` | Median end-to-end response time. Total seconds for a 500-token answer, with thinking time |
+| `output_tokens_per_second` | Generation speed, model-level |
+| `time_to_first_token_ms` | Latency to first token, model-level |
+| `e2e_response_time_s` | Median end-to-end response time, model-level. Total seconds for a 500-token answer, with thinking time |
 | `reasoning` | Whether it's a reasoning model |
 | `open_weights` | Whether weights are open |
 | `deprecated` | Whether Artificial Analysis marks the model as deprecated |
@@ -80,14 +90,15 @@ Each entry:
 
 | Metric | Coverage |
 |---|---|
-| Pricing (input/output) | 100% (388/388) |
-| Intelligence Index | 98% |
-| Cost per task | 36% |
-| End-to-end response time | 82% |
-| Speed (tok/s) | 82% |
-| Cache pricing | 55% |
+| Pricing (input/output) | 100% (445/445) |
+| Intelligence Index | 99% |
+| Family, lab, release date, effort | 100% |
+| Cost per task | 40% |
+| End-to-end response time | 78% |
+| Speed (tok/s) | 78% |
+| Cache pricing | 68% |
 
-The site publishes `cost_per_task` only for a subset of endpoints. 137 models have all three plot metrics: intelligence, cost per task, and response time.
+Artificial Analysis publishes a model-level `cost_per_task` for a subset of models. 164 models have all three plot metrics: intelligence, cost per task, and response time (October 2026).
 
 ## How it works
 
@@ -106,14 +117,16 @@ The RSC endpoint requires specific headers (`rsc: 1`, `next-router-state-tree`, 
 ## Limitations
 
 - **No API key = fragile.** The RSC endpoint is an internal Next.js mechanism. If the site changes its chunk format again, the bracket-counting may need updating.
-- **Placeholder values.** The RSC stream marks missing values with strings such as `"$undefined"`. The parser turns them into `null`. Some entries hold a reference string instead of a nested object. The deduplication step prefers entries with complete data.
+- **Placeholder values.** The RSC stream marks missing values with strings such as `"$undefined"`. The parser turns them into `null`. Some entries hold a reference string instead of a nested object. Deduplication keeps one endpoint per model: priced endpoints beat unpriced ones (a missing or zero price counts as unpriced), then the model creator's own endpoint wins, then the lowest host cost per task (a missing one sorts last). Models priced zero at every host are dropped.
 - **Official API is preferred** for production use. This parser is a workaround for when you don't have (or don't want) an API key. See [artificialanalysis.ai/documentation](https://artificialanalysis.ai/documentation) for the free API tier (1,000 req/day).
 
-## Companion: Intelligence Index vs. Cost per Task plot
+## Companion: the intelligence vs cost page
 
-`intelligence-vs-cost.html` replicates the scatter plot from the [artificialanalysis.ai](https://artificialanalysis.ai/) home page. Each point is one AI model. The X axis shows the cost to run one benchmark task (USD, log scale). The Y axis shows the AA Intelligence Index. A blue step line marks the Pareto frontier: the models that give the most intelligence for the money.
+`intelligence-vs-cost.html` plots AI models by score and cost, in the style of the "Cost vs intelligence" chart on [slopalytics.com](https://slopalytics.com/). Each point is one model variant (one reasoning effort level), and a line joins the variants of one model family. The X axis shows the cost to run one benchmark task (USD, log scale by default). The Y axis shows the AA Intelligence Index. A dashed line marks the Pareto frontier: the variants that give the highest score for the money.
 
-The Y axis can show six scores: the Intelligence Index, SciCode, the AIME 2025 math contest score, Terminal-Bench v4.0, LiveBench Coding, or LiveBench Agentic Coding. Use the radio buttons in the filter row to switch. The Pareto line follows the selected score.
+The sidebar picks the model families and reasoning levels to plot, a subscription plan for Claude and for Codex, and a maximum response time. With a plan picked, the X axis shows the effective cost per task: the page scales the API cost of Anthropic models, and of OpenAI models that are not open weights, by the plan's monthly fee divided by the API value of its allowance. Hover over a point for its details. Click it to pin it, then hover over another point to compare the two. The selection, benchmark, plans, response time limit and chart options are kept in the page URL, so a link shows the same chart. Zoom Y to Pareto is the exception: it lasts only for the visit.
+
+The Y axis can show six scores: the Intelligence Index, SciCode, the AIME 2025 math contest score, Terminal-Bench v4.0, LiveBench Coding, or LiveBench Agentic Coding. Use the benchmark tabs in the page header to switch. The Pareto line follows the selected score.
 
 Coding uses SciCode scaled to 0–100 because the models feed no longer supplies
 the former composite Coding Index. These scores are not historically comparable.
@@ -126,7 +139,7 @@ scores fails before replacing `models.json`, preserving the last usable data.
 scores are downloadable in the existing models leaderboard RSC feed as
 `terminalbenchV40`. The parser joins by exact model slug and scales fractions to
 0–100. Zero is a valid score; missing scores are null and excluded from this
-view. Select it with the radio button or `?metric=terminalbench_v4_0`.
+view. Select it with its tab or `?metric=terminalbench_v4_0`.
 The cost axis still uses Intelligence Index task costs, including any selected
 subscription estimate. The response time filter uses the existing response-time
 measurements, not Terminal-Bench task durations. This is internal page data,
@@ -149,8 +162,8 @@ is null. The table and tooltips display completed/expected subtask counts so
 partial results remain visible.
 
 Select `?metric=livebench_coding` or `?metric=livebench_agentic_coding`, or use
-the radio buttons. Both views use the existing provider/model selectors,
-Pareto calculation, and response-time filter. Their cost axis is the AA
+the tabs. Both views use the same model selection, Pareto calculation, and
+response-time filter. Their cost axis is the AA
 Intelligence Index task cost with the selected subscription adjustment, and
 the response time is AA's measurement. Neither measures LiveBench evaluation
 cost or duration.
@@ -188,17 +201,9 @@ python3 artificialanalysis.ai-parser.py --minimal --pretty \
 
 The focused fixtures under `tests/fixtures/` contain selected official rows and
 category definitions; their metadata records the source commit and retrieval.
-Run regression checks with:
+The parser tests use them (see [Tests](#tests)).
 
-```bash
-python3 -m unittest discover -s tests -v
-node --test tests/test_ui.cjs
-```
-
-The UI tests run the page's inline script with small DOM stubs in Node; they do
-not verify browser layout.
-
-The page adds one filter that the original site does not have: **maximum end-to-end response time**. Reasoning models can think for minutes before they answer. Move the slider to hide models that are slower than your limit. The page then computes the Pareto line again from the models that remain. This shows you the best value models that are also fast enough for your use case.
+Besides the benchmark tabs, the plan selectors, Show deprecated and Zoom Y to Pareto, the page adds a filter that slopalytics does not have: **maximum end-to-end response time**. Reasoning models can think for minutes before they answer. Move the slider to fade out models that are slower than your limit. The page then computes the Pareto line again from the models that remain. This shows you the best value models that are also fast enough for your use case.
 
 To use the page:
 
@@ -206,7 +211,38 @@ To use the page:
 2. Start a web server in this folder: `python3 -m http.server`.
 3. Open `http://localhost:8000/intelligence-vs-cost.html`.
 
-The page has no dependencies. It also has a table view, tooltips, keyboard navigation, and a dark mode.
+The sidebar lists the model families that have cost data: the curated Frontier and Notable lists, and every other family under "Show all models". Click a family to show or hide it. Type in the search box, or press `/`, to find a family by name or lab. Right-click a family or a point, or long-press it on a touch screen, for more options, such as showing only one lab.
+
+The buttons at the right of the header switch between light and dark themes, download the chart as a PNG image, show the whole page full screen, and replace the chart with a table of the same variants. The table lists every score, the cost per task and the response time, sorted by the selected benchmark. The `?` button opens the help text, and the `…` button turns the family labels on or off and clears highlights.
+
+On a phone, or in a window 900 pixels wide or less, the sidebar moves into a full-screen sheet behind the "Models" button, together with the plan selectors, the response time slider and the Labels toggle. The PNG, full-screen and `…` buttons are not shown at this width. A two-column legend under the chart takes the place of the labels. Tap near a point to see its details in a card at the bottom of the screen.
+
+The page has no build step and no script dependencies; it loads the DM Sans font from Google Fonts. It also has tooltips, keyboard navigation, and light and dark themes.
+
+## Tests
+
+The parser tests in `tests/test_parser.py` need only the Python standard library:
+
+```bash
+python3 -m unittest tests.test_parser -v
+```
+
+The browser tests in `tests/test_ui.py` drive `intelligence-vs-cost.html` in Chromium and
+Firefox with [Playwright for Python](https://playwright.dev/python/). The test fixture serves
+this folder with `http.server` on a free port. Most tests replace `models.json` with a small
+fixture, so their expected values do not change when the data does; one smoke test loads the
+real `models.json`. Run the parser and browser tests together with a pinned Playwright
+version (the tests were last run with 1.63):
+
+```bash
+uv run --with 'playwright~=1.63.0' python3 -m unittest discover -s tests -v
+```
+
+Pin the Playwright version whose browser builds are installed: an unpinned `--with playwright`
+can pick a release that expects other builds. Without Playwright,
+`python3 -m unittest discover -s tests -v` runs the parser tests and skips the browser tests.
+Only if the matching Chromium and Firefox builds are missing, install them once with
+`uv run --with 'playwright~=1.63.0' playwright install chromium firefox`.
 
 ## License
 

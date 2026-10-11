@@ -35,6 +35,24 @@ def stream(key, values):
     return ('1:' + json.dumps({key: values}, separators=(",", ":"))).encode()
 
 
+# The models leaderboard repeats the site navigation: releases (families) and
+# a models array that links each variant slug to its release.
+def nav(slug="test"):
+    return stream("modelsAndReleases", {
+        "releases": [{"slug": "test-family", "name": "Test Family", "deprecated": False,
+                      "releaseDate": "2026-09-22",
+                      "creator": {"slug": "test-lab", "name": "Test Lab", "logo": "/img/logos/t.svg"}}],
+        "models": [{"slug": slug, "name": "Test model (Xhigh, Default Fallback)",
+                    "releaseSlug": "test-family"}],
+    })
+
+
+def scores(slug="test", **fields):
+    """Models leaderboard stream for one slug with a model-level cost."""
+    return nav(slug) + b"\n" + stream("models", [
+        {"slug": slug, "intelligenceIndexCostPerTask": 0.25, **fields}])
+
+
 class ParserTests(unittest.TestCase):
     def test_scicode_join_and_scaling(self):
         raw = stream("models", [{"slug": "test"}, {"slug": "other"}])
@@ -97,43 +115,166 @@ class ParserTests(unittest.TestCase):
         for minimal in [False, True]:
             with self.subTest(minimal=minimal), tempfile.TemporaryDirectory() as directory:
                 data = self.run_main(directory, stream("rows", [ROW]),
-                                     stream("models", [{"slug": "test", "scicode": 0, "terminalBench40": 0}]), minimal)
+                                     scores(scicode=0, terminalBench40=0), minimal)
                 self.assertEqual(data[0]["coding_index"], 0)
                 self.assertEqual(data[0]["terminalbench_v4_0"], 0)
                 self.assertEqual("agentic_index" in data[0], not minimal)
+                self.assertEqual({k: data[0][k] for k in [
+                    "family", "family_name", "lab", "lab_name", "released", "effort",
+                    "effort_order", "cost_per_task",
+                ]}, {
+                    "family": "test-family", "family_name": "Test Family", "lab": "test-lab",
+                    "lab_name": "Test Lab", "released": "2026-09-22", "effort": "xhigh",
+                    "effort_order": 50, "cost_per_task": 0.25,
+                })
 
     def test_terminalbench_output(self):
         for minimal in [False, True]:
             for score in [0, 0.25]:
                 with self.subTest(minimal=minimal, score=score), tempfile.TemporaryDirectory() as directory:
-                    data = self.run_main(directory, stream("rows", [ROW]), stream("models", [
-                        {"slug": "test", "scicode": 0.5, "terminalBench40": score},
-                    ]), minimal)
+                    data = self.run_main(directory, stream("rows", [ROW]),
+                                         scores(scicode=0.5, terminalBench40=score), minimal)
                     self.assertEqual(data[0]["terminalbench_v4_0"], score * 100)
                     self.assertEqual(data[0]["coding_index"], 50)
 
     def test_failed_refresh_preserves_output(self):
-        valid = stream("models", [{"slug": "test", "scicode": 0.5, "terminalBench40": 0.5}])
-        cases = [(None, valid), (stream("rows", [ROW]), None),
-                 (stream("rows", [ROW]), stream("models", [{"slug": "test"}])),
-                 (stream("rows", [ROW]), stream("models", [{"slug": "test", "scicode": 0.5, "terminalbenchV40": 0.5}])),
-                 (stream("rows", [ROW]), stream("models", [{"slug": "other", "scicode": 0.5}]))]
+        valid = scores(scicode=0.5, terminalBench40=0.5)
+        rows = stream("rows", [ROW])
+        cases = [(None, valid), (rows, None), (rows, scores()),
+                 (rows, scores(scicode=0.5, terminalbenchV40=0.5)),
+                 (rows, nav() + b"\n" + stream("models", [{"slug": "other", "scicode": 0.5}])),
+                 # Without the navigation block there are no families.
+                 (rows, stream("models", [{"slug": "test", "scicode": 0.5, "terminalBench40": 0.5,
+                                           "intelligenceIndexCostPerTask": 0.5}]))]
         for section, field, values in [
             ("pricing", "price1mInputTokens", [None, 0]),
             ("model", "deprecated", [True]),
-            ("pricing", "costPerTask", [None, 0, -1, True, "bad", float("inf"), float("nan")]),
         ]:
             for value in values:
                 row = copy.deepcopy(ROW)
                 row[section][field] = value
                 cases.append((stream("rows", [row]), valid))
-        for i, (rows, scores) in enumerate(cases):
+        # The host row's costPerTask (0.5 in ROW) must not stand in for the model-level cost.
+        for value in [None, "$undefined", 0, -1, True, "bad", float("inf"), float("nan")]:
+            cases.append((rows, scores(scicode=0.5, terminalBench40=0.5,
+                                       intelligenceIndexCostPerTask=value)))
+        for i, (rows_raw, models_raw) in enumerate(cases):
             with self.subTest(case=i), tempfile.TemporaryDirectory() as directory:
                 with self.assertRaises(SystemExit) as error:
-                    self.run_main(directory, rows, scores)
+                    self.run_main(directory, rows_raw, models_raw)
                 self.assertEqual(error.exception.code, 1)
                 self.assertEqual((Path(directory) / "output.json").read_bytes(), b"previous dataset\n")
 
+    def test_parse_effort(self):
+        for name, reasoning, expected in [
+            ("Claude Opus 5.5 (Xhigh, Default Fallback)", True, ("xhigh", 50)),
+            ("Claude Opus 5.5 (xhigh with fallback)", True, ("xhigh", 50)),
+            ("Claude Fable 5 (Max, Opus 4.8 Fallback)", True, ("max", 60)),
+            ("Claude Fable 5 (with fallback)", True, ("max", 60)),
+            ("GPT-6.1 Sol (High)", True, ("high", 40)),
+            ("GPT-6 Astra (medium)", True, ("medium", 30)),
+            ("GPT-6 Luna (low)", True, ("low", 20)),
+            ("GPT-5 (Minimal)", False, ("minimal", 10)),
+            ("GPT-6 Sol (Daybreak Blue, max)", True, ("max", 60)),
+            ("GLM-5.3 Turbo (max, Based on GLM-5.2)", True, ("max", 60)),
+            ("Gemini 4 Argon (high) AI Studio (1M output)", True, ("high", 40)),
+            ("DeepSeek V4 Pro (Non-reasoning)", False, ("none", 0)),
+            ("Claude Opus 4.7 (Non-reasoning, High)", False, ("none", 0)),
+            ("Claude Opus 4.7 (Non-reasoning, High)", True, ("none", 0)),
+            ("Solar Pro 2 (Reasoning)", True, ("default", 35)),
+            ("Mercury 2", True, ("default", 35)),
+            ("Llama 4 Maverick", False, ("none", 0)),
+            ("Gemini 2.5 Flash (Sep '25)", False, ("none", 0)),
+            # Qwen's "Max" is part of the model name, not an effort.
+            ("Qwen3.8 Max (0902)", True, ("default", 35)),
+            ("Qwen3.7 Max", False, ("none", 0)),
+            ("Qwen3 Max Thinking (Preview)", True, ("default", 35)),
+            (None, True, ("default", 35)),
+            (None, False, ("none", 0)),
+        ]:
+            with self.subTest(name=name, reasoning=reasoning):
+                self.assertEqual(parser.parse_effort(name, reasoning), expected)
+
+    def test_deduplicate_prefers_priced_first_party(self):
+        def host(name, prices, cost=None, e2e=None):
+            return {"label": f"Model {name}", "host": {"name": name},
+                    "model": {"slug": "m", "creator": {"name": "Lab"}, "intelligenceIndex": 40},
+                    "pricing": {"price1mInputTokens": prices[0], "price1mOutputTokens": prices[1],
+                                "costPerTask": cost},
+                    "performance": {"medianEndToEndResponseTimeSeconds": e2e}}
+
+        for hosts, expected in [
+            # Host-level cost and response time no longer matter: model-level data feeds the chart.
+            ([host("Third", (0.75, 2.95), cost=1, e2e=5), host("Lab", (0.3, 1.2))], "Lab"),
+            ([host("Lab", ("$undefined", 1.2)), host("Third", (0.75, 2.95))], "Third"),
+            # A free endpoint must not hide a priced host (main() drops zero prices).
+            ([host("Lab", (0, 0), cost=1, e2e=5), host("Third", (0.18, 0.5))], "Third"),
+            ([host("Free", (0, 0), cost=0.1), host("Dear", (2, 8), cost=3),
+              host("Cheap", (1, 4), cost=2), host("Unknown", (0.5, 1))], "Cheap"),
+            # Zero price everywhere: the model is dropped later, as before.
+            ([host("Lab", (0, 0)), host("Third", (0, 0))], "Lab"),
+        ]:
+            with self.subTest(expected=expected):
+                [best] = parser.deduplicate_models(hosts)
+                self.assertEqual(best["host"]["name"], expected)
+
+    def test_model_level_metadata_and_performance(self):
+        row = copy.deepcopy(ROW)
+        row["label"] = "Test model (high)"  # host label; AA's model name wins
+        row["model"]["reasoningModel"] = True
+        row["host"] = {"name": "Some Host"}
+        row["performance"] = {"medianEndToEndResponseTimeSeconds": 10,
+                              "medianOutputTokensPerSecond": 5,
+                              "medianTimeToFirstTokenSeconds": 1}
+        raw = scores(intelligenceIndexCostPerTask=3.25,
+                     medianEndToEndResponseTimeSeconds=133.998,
+                     medianOutputTokensPerSecond=80.5,
+                     medianTimeToFirstTokenSeconds=2.5)
+        # Later metadata must not erase values from an earlier array.
+        raw += b"\n" + stream("models", [{"slug": "test", "name": None, "releaseSlug": "$undefined",
+                                         "intelligenceIndexCostPerTask": None,
+                                         "medianEndToEndResponseTimeSeconds": None}])
+        model = parser.clean_model(row, parser.extract_model_indexes(raw))
+        self.assertEqual({k: model[k] for k in [
+            "family", "family_name", "lab", "lab_name", "released", "effort", "effort_order",
+            "cost_per_task", "e2e_response_time_s", "output_tokens_per_second",
+            "time_to_first_token_ms", "provider", "price_1m_input_tokens", "name",
+        ]}, {
+            "family": "test-family", "family_name": "Test Family", "lab": "test-lab",
+            "lab_name": "Test Lab", "released": "2026-09-22", "effort": "xhigh", "effort_order": 50,
+            "cost_per_task": 3.25, "e2e_response_time_s": 134.0, "output_tokens_per_second": 80.5,
+            "time_to_first_token_ms": 2500.0, "provider": "Some Host", "price_1m_input_tokens": 1,
+            "name": "Test model (high)",
+        })
+        # No model-level data: no host-level stand-ins; effort comes from the host label.
+        model = parser.clean_model(row, {})
+        for key in ["family", "family_name", "lab", "lab_name", "released", "cost_per_task",
+                    "e2e_response_time_s", "output_tokens_per_second", "time_to_first_token_ms"]:
+            self.assertIsNone(model[key], key)
+        self.assertEqual((model["effort"], model["effort_order"]), ("high", 40))
+        for bad in [None, "$undefined", -1, True, "1", float("inf"), float("nan")]:
+            with self.subTest(bad=bad):
+                raw = scores(intelligenceIndexCostPerTask=bad, medianEndToEndResponseTimeSeconds=bad,
+                             medianOutputTokensPerSecond=bad, medianTimeToFirstTokenSeconds=bad)
+                model = parser.clean_model(row, parser.extract_model_indexes(raw))
+                for key in ["cost_per_task", "e2e_response_time_s", "output_tokens_per_second",
+                            "time_to_first_token_ms"]:
+                    self.assertIsNone(model[key], key)
+
+    def test_release_metadata_validation(self):
+        nav = {"releases": [{"slug": "fam", "name": "$undefined", "releaseDate": "Sep 2026",
+                             "creator": "$c:props:creator"}],
+               "models": [{"slug": "a", "name": "A (low)", "releaseSlug": "fam"},
+                          {"slug": "b", "name": "A (high)", "releaseSlug": "fam"},
+                          {"slug": "c", "name": "C", "releaseSlug": "unknown"}]}
+        indexes = parser.extract_model_indexes(stream("modelsAndReleases", nav))
+        a, b, c = (parser.clean_model({"model": {"slug": s}}, indexes) for s in "abc")
+        self.assertEqual((a["family"], b["family"]), ("fam", "fam"))
+        self.assertEqual((a["effort"], b["effort"]), ("low", "high"))
+        for key in ["family_name", "lab", "lab_name", "released"]:
+            self.assertIsNone(a[key], key)
+        # A release missing from the navigation leaves the family unknown.
+        self.assertIsNone(c["family"])
 
     def test_livebench_fixture_and_compatibility(self):
         indexes = parser.parse_livebench(*LIVEBENCH_INPUT)
@@ -191,9 +332,8 @@ class ParserTests(unittest.TestCase):
     def test_livebench_zero_scores_survive_refresh(self):
         raw = b"model,code_generation,code_completion,javascript,typescript,python\ngpt-6-astra-max,0,0,0,0,0\n"
         with tempfile.TemporaryDirectory() as directory:
-            data = self.run_main(directory, stream("rows", [ROW]), stream("models", [
-                {"slug": "test", "scicode": 0, "terminalBench40": 0},
-            ]), livebench=(raw, *LIVEBENCH_INPUT[1:]))
+            data = self.run_main(directory, stream("rows", [ROW]), scores(scicode=0, terminalBench40=0),
+                                 livebench=(raw, *LIVEBENCH_INPUT[1:]))
             self.assertEqual(data[0]["livebench_coding"], 0)
             self.assertEqual(data[0]["livebench_agentic_coding"], 0)
 
@@ -209,9 +349,8 @@ class ParserTests(unittest.TestCase):
     def test_livebench_full_minimal_and_no_response_time(self):
         for minimal in [False, True]:
             with self.subTest(minimal=minimal), tempfile.TemporaryDirectory() as directory:
-                data = self.run_main(directory, stream("rows", [ROW]), stream("models", [
-                    {"slug": "test", "scicode": 0.5, "terminalBench40": 0.5},
-                ]), minimal)
+                data = self.run_main(directory, stream("rows", [ROW]),
+                                     scores(scicode=0.5, terminalBench40=0.5), minimal)
                 self.assertIsNone(data[0]["e2e_response_time_s"])
                 self.assertGreater(data[0]["livebench_coding"], 0)
                 meta = data[0]["livebench"]
@@ -226,16 +365,16 @@ class ParserTests(unittest.TestCase):
         cases = [b"wrong header", header + b"unknown,1,2,3,4,5\n",
                  header + b"gpt-6-astra-max,,,1,2,3\n",
                  header + b"gpt-6-astra-max,1,2,,,\n"]
-        scores = stream("models", [{"slug": "test", "scicode": 0.5, "terminalBench40": 0.5}])
+        valid = scores(scicode=0.5, terminalBench40=0.5)
         for raw in cases:
             with self.subTest(raw=raw), tempfile.TemporaryDirectory() as directory:
                 with self.assertRaises(SystemExit):
-                    self.run_main(directory, stream("rows", [ROW]), scores,
+                    self.run_main(directory, stream("rows", [ROW]), valid,
                                   livebench=(raw, *LIVEBENCH_INPUT[1:]))
                 self.assertEqual((Path(directory) / "output.json").read_bytes(), b"previous dataset\n")
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaises(SystemExit):
-                self.run_main(directory, stream("rows", [ROW]), scores, livebench=URLError("offline"))
+                self.run_main(directory, stream("rows", [ROW]), valid, livebench=URLError("offline"))
             self.assertEqual((Path(directory) / "output.json").read_bytes(), b"previous dataset\n")
 
     def test_livebench_fetch_uses_one_commit(self):
@@ -259,9 +398,7 @@ class ParserTests(unittest.TestCase):
             row = copy.deepcopy(ROW)
             row["model"]["slug"] = "gpt-6-astra"
             (root / "aa.txt").write_bytes(stream("rows", [row]))
-            (root / "scores.txt").write_bytes(stream("models", [
-                {"slug": "gpt-6-astra", "scicode": 0.5, "terminalBench40": 0.5},
-            ]))
+            (root / "scores.txt").write_bytes(scores("gpt-6-astra", scicode=0.5, terminalBench40=0.5))
             args = ["parser", "--file", str(root / "aa.txt"), "--models-file", str(root / "scores.txt"),
                     "--livebench-file", str(FIXTURES / "livebench.csv"),
                     "--livebench-categories-file", str(FIXTURES / "livebench-categories.json"),

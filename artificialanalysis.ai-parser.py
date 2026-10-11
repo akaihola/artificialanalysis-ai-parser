@@ -33,6 +33,18 @@ RSC_HEADERS = {
     "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36",
 }
 
+# Effort order on Artificial Analysis' scale (effort.level on model pages),
+# plus "none" for non-reasoning and "default" for reasoning without an effort.
+EFFORT_ORDER = {"none": 0, "minimal": 10, "low": 20, "medium": 30, "default": 35,
+                "high": 40, "xhigh": 50, "max": 60}
+# Model-level values from the models leaderboard, by output field.
+MODEL_LEVEL_KEYS = {
+    "cost_per_task": "intelligenceIndexCostPerTask",
+    "e2e_response_time_s": "medianEndToEndResponseTimeSeconds",
+    "output_tokens_per_second": "medianOutputTokensPerSecond",
+    "time_to_first_token_ms": "medianTimeToFirstTokenSeconds",
+}
+
 LIVEBENCH_RELEASE = "2026_06_25"
 LIVEBENCH_ROOT = "https://raw.githubusercontent.com/LiveBench/new-livebench"
 LIVEBENCH_CATEGORIES = {
@@ -172,6 +184,41 @@ def dict_or_empty(v):
     return v if isinstance(v, dict) else {}
 
 
+def text_or_none(v):
+    """Return v if it is a real string, None for placeholders and other types."""
+    return v if isinstance(v, str) and v and not v.startswith("$") else None
+
+
+def measurement_or_none(v):
+    """Return v if it is a finite, non-negative number (not a bool)."""
+    return v if type(v) in (int, float) and math.isfinite(v) and v >= 0 else None
+
+
+def parse_effort(name, reasoning):
+    """Return (effort, effort_order) parsed from an AA model name.
+
+    The effort sits in a parenthetical, e.g. "(Xhigh, Default Fallback)",
+    "(xhigh with fallback)" or "(Daybreak Blue, max)". "Non-reasoning" wins
+    over an effort. A bare "(with fallback)" is Claude Fable 5's max
+    variant. Words outside parentheses, such as Qwen's "Max", are part of
+    the model name. Without an effort, reasoning models get "default" and
+    the rest "none".
+    """
+    effort = None
+    for group in re.findall(r"\(([^()]*)\)", name or ""):
+        for part in group.split(","):
+            part = part.strip().lower()
+            if part == "non-reasoning":
+                return "none", EFFORT_ORDER["none"]
+            if part == "with fallback":
+                part = "max"
+            part = re.sub(r"\s+with fallback$", "", part)
+            if effort is None and part in EFFORT_ORDER and part not in ("none", "default"):
+                effort = part
+    effort = effort or ("default" if reasoning else "none")
+    return effort, EFFORT_ORDER[effort]
+
+
 def extract_rows(raw):
     """Extract the leaderboard "rows" JSON array from the RSC stream.
 
@@ -200,26 +247,36 @@ def extract_rows(raw):
         return None
 
 
-def extract_model_indexes(raw):
-    """Extract SciCode, Terminal-Bench v4.0 and Agentic scores by model slug.
+def json_arrays(text, key):
+    """Yield every JSON array stored under `key` in the RSC text."""
+    decoder = json.JSONDecoder()
+    pattern = f'"{key}":['
+    pos = 0
+    while True:
+        idx = text.find(pattern, pos)
+        if idx < 0:
+            return
+        pos = idx + len(pattern)
+        try:
+            array, _ = decoder.raw_decode(text, pos - 1)
+        except json.JSONDecodeError:
+            continue
+        yield array
 
-    SciCode replaces the Coding Index missing from the current feed.
-    This function finds all "models" JSON arrays in the stream and maps
-    model slugs to numeric scores.
+
+def extract_model_indexes(raw):
+    """Extract model-level data from the models leaderboard by model slug.
+
+    The stream holds two "models" arrays: the site navigation
+    ({slug, name, releaseSlug}) and the leaderboard (scores, model-level
+    cost per task and performance). Both are merged by slug; a later
+    array never erases a valid earlier value. The navigation's "releases"
+    array (families, with release date and creator) is attached as
+    "release". SciCode replaces the Coding Index missing from the feed.
     """
     text = raw.decode("utf-8", errors="replace")
     indexes = {}
-    decoder = json.JSONDecoder()
-    pos = 0
-    while True:
-        idx = text.find('"models":[', pos)
-        if idx < 0:
-            break
-        pos = idx + 10
-        try:
-            models, _ = decoder.raw_decode(text, text.find('[', idx))
-        except json.JSONDecodeError:
-            continue
+    for models in json_arrays(text, "models"):
         for m in models:
             if not isinstance(m, dict) or not m.get("slug"):
                 continue
@@ -230,6 +287,17 @@ def extract_model_indexes(raw):
                     entry[key] = score
             if isinstance(m.get("agenticIndex"), (int, float)):
                 entry["agenticIndex"] = m["agenticIndex"]
+            for key in MODEL_LEVEL_KEYS.values():
+                if measurement_or_none(m.get(key)) is not None:
+                    entry[key] = m[key]
+            for key in ("name", "releaseSlug"):
+                if text_or_none(m.get(key)):
+                    entry[key] = m[key]
+    releases = {r["slug"]: r for array in json_arrays(text, "releases") for r in array
+                if isinstance(r, dict) and text_or_none(r.get("slug"))}
+    for entry in indexes.values():
+        if entry.get("releaseSlug") in releases:
+            entry["release"] = releases[entry["releaseSlug"]]
     return indexes
 
 
@@ -239,11 +307,14 @@ def deduplicate_models(entries):
     Many hosts serve the same model. Price and speed differ per host.
     We pick one entry per model slug with these rules, in this order:
 
-    1. Prefer an entry that has prices.
-    2. Prefer an entry that also has cost per task, intelligence index,
-       and end-to-end response time. The plot needs these three values.
-    3. Prefer the entry from the model creator's own API.
-    4. Prefer the entry with the lowest cost per task.
+    1. Prefer an entry with non-zero input and output prices. main()
+       drops models without them, so a free endpoint (Google's 0/0 for
+       Gemma) must not win over a priced host.
+    2. Prefer the entry from the model creator's own API.
+    3. Prefer the entry with the lowest cost per task.
+
+    The kept entry supplies the provider and price fields. Cost per task
+    and performance come from model-level data (see clean_model).
 
     We also give each kept entry the shortest label from its group.
     Host-specific labels are longer (for example "Gemini 3.5 Flash
@@ -258,18 +329,14 @@ def deduplicate_models(entries):
     def sort_key(entry):
         model = dict_or_empty(entry.get("model"))
         pricing = dict_or_empty(entry.get("pricing"))
-        perf = dict_or_empty(entry.get("performance"))
         host = dict_or_empty(entry.get("host"))
         creator = dict_or_empty(model.get("creator"))
         cost_per_task = value_or_none(pricing.get("costPerTask"))
-        has_prices = (value_or_none(pricing.get("price1mInputTokens")) is not None
-                      and value_or_none(pricing.get("price1mOutputTokens")) is not None)
-        complete = (cost_per_task is not None
-                    and value_or_none(model.get("intelligenceIndex")) is not None
-                    and value_or_none(perf.get("medianEndToEndResponseTimeSeconds")) is not None)
+        has_prices = bool(value_or_none(pricing.get("price1mInputTokens"))
+                          and value_or_none(pricing.get("price1mOutputTokens")))
         first_party = host.get("name") == creator.get("name")
         # min() picks the best entry, so "good" must sort as "small".
-        return (not has_prices, not complete, not first_party,
+        return (not has_prices, not first_party,
                 cost_per_task if cost_per_task is not None else float("inf"))
 
     result = []
@@ -289,13 +356,16 @@ def clean_model(entry, indexes=None, livebench=None):
     (see extract_model_indexes). coding_index holds SciCode scaled to
     0-100, replacing the composite Coding Index missing from the feed.
     terminalbench_v4_0 holds Terminal-Bench v4.0 scaled to 0-100.
+    Cost per task, response time, output speed and time to first token
+    are model-level values, so they never mix with the host row's.
+    family (AA release slug), family_name, lab, lab_name and released
+    come from the release; effort from AA's model name (parse_effort).
 
     The site does not publish a Math Index anymore. As a stand-in,
     math_index holds the AIME 2025 math contest score (0-100). It is
     None for models that Artificial Analysis did not test on AIME.
     """
     model = dict_or_empty(entry.get("model"))
-    perf = dict_or_empty(entry.get("performance"))
     pricing = dict_or_empty(entry.get("pricing"))
     features = dict_or_empty(entry.get("features"))
     host = dict_or_empty(entry.get("host"))
@@ -304,9 +374,15 @@ def clean_model(entry, indexes=None, livebench=None):
     in_price = value_or_none(pricing.get("price1mInputTokens"))
     out_price = value_or_none(pricing.get("price1mOutputTokens"))
     blended = (3 * in_price + out_price) / 4 if in_price is not None and out_price is not None else None
-    ttft_s = value_or_none(perf.get("medianTimeToFirstTokenSeconds"))
-    e2e_s = value_or_none(perf.get("medianEndToEndResponseTimeSeconds"))
     model_indexes = (indexes or {}).get(model.get("slug"), {})
+    # Cost and performance are AA's model-level values, not the host row's.
+    perf = {field: model_indexes.get(key) for field, key in MODEL_LEVEL_KEYS.items()}
+    ttft_s, e2e_s = perf["time_to_first_token_ms"], perf["e2e_response_time_s"]
+    release = dict_or_empty(model_indexes.get("release"))
+    lab = dict_or_empty(release.get("creator"))
+    released = text_or_none(release.get("releaseDate"))
+    reasoning = model.get("reasoningModel", False)
+    effort, effort_order = parse_effort(model_indexes.get("name") or entry.get("label"), reasoning)
     scicode = model_indexes.get("scicode")
     terminalbench = model_indexes.get("terminalBench40")
     aime25 = value_or_none(model.get("aime25"))
@@ -317,6 +393,13 @@ def clean_model(entry, indexes=None, livebench=None):
         "creator": creator.get("name", host.get("name", "?")),
         "provider": host.get("name", "?"),
         "slug": model.get("slug", ""),
+        "family": text_or_none(release.get("slug")),
+        "family_name": text_or_none(release.get("name")),
+        "lab": text_or_none(lab.get("slug")),
+        "lab_name": text_or_none(lab.get("name")),
+        "released": released if released and re.fullmatch(r"\d{4}-\d{2}-\d{2}", released) else None,
+        "effort": effort,
+        "effort_order": effort_order,
         "intelligence_index": value_or_none(model.get("intelligenceIndex")),
         "coding_index": scicode * 100 if scicode is not None else None,
         "terminalbench_v4_0": terminalbench * 100 if terminalbench is not None else None,
@@ -325,16 +408,16 @@ def clean_model(entry, indexes=None, livebench=None):
         "livebench": livebench_scores.get("livebench"),
         "math_index": aime25 * 100 if aime25 is not None else None,
         "agentic_index": model_indexes.get("agenticIndex"),
-        "cost_per_task": value_or_none(pricing.get("costPerTask")),
+        "cost_per_task": perf["cost_per_task"],
         "price_1m_input_tokens": in_price,
         "price_1m_output_tokens": out_price,
         "price_1m_cache_hit": value_or_none(pricing.get("cacheHitPrice")),
         "blended_price_3_1": blended,
         "context_window_tokens": value_or_none(features.get("contextWindowTokens")),
-        "output_tokens_per_second": value_or_none(perf.get("medianOutputTokensPerSecond")),
+        "output_tokens_per_second": perf["output_tokens_per_second"],
         "time_to_first_token_ms": round(ttft_s * 1000, 1) if ttft_s else None,
         "e2e_response_time_s": round(e2e_s, 2) if e2e_s else None,
-        "reasoning": model.get("reasoningModel", False),
+        "reasoning": reasoning,
         "open_weights": model.get("isOpenWeights", False),
         "deprecated": model.get("deprecated", False),
         "gpqa": value_or_none(model.get("gpqa")),
@@ -346,6 +429,7 @@ def compress_for_calculator(models):
     """Return minimal fields needed by the aiprice.html calculator."""
     keep = [
         "name", "creator", "provider", "slug",
+        "family", "family_name", "lab", "lab_name", "released", "effort", "effort_order",
         "intelligence_index", "coding_index", "math_index", "terminalbench_v4_0",
         "cost_per_task",
         "price_1m_input_tokens", "price_1m_output_tokens", "price_1m_cache_hit",
@@ -428,6 +512,14 @@ def main():
     print(f"Models with pricing: {len(models_with_price)}")
 
     # Preserve the last usable dataset when the score feed or slug join breaks.
+    if not any(m["family"] for m in models_with_price):
+        print("Error: no model families; check the modelsAndReleases navigation block "
+              "in the models leaderboard download. Output left unchanged.")
+        sys.exit(1)
+    if not any(m["cost_per_task"] for m in models_with_price):
+        print("Error: no model-level cost per task; check the models leaderboard "
+              "download and intelligenceIndexCostPerTask field. Output left unchanged.")
+        sys.exit(1)
     if not any("terminalBench40" in m for m in indexes.values()):
         print("Error: no Terminal-Bench v4.0 scores; check the models leaderboard "
               "download and terminalBench40 field. Output left unchanged.")
