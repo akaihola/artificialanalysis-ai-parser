@@ -1427,6 +1427,23 @@ class PageTests(unittest.TestCase):
         for button in ("#theme-toggle", "#table-button", "#help-button"):
             self.assertEqual(page.eval_on_selector(button, "e => e.offsetWidth"), 32, button)
 
+    def test_tab_bar_fades_where_it_overflows(self):
+        def fades(page):
+            return page.eval_on_selector("#metric-tabs", """t => [t.classList.contains('fade-start'),
+                t.classList.contains('fade-end'), getComputedStyle(t).maskImage !== 'none']""")
+
+        page = self.open(viewport={"width": 1024, "height": 768})
+        self.assertEqual(fades(page), [False, True, True])
+        page.eval_on_selector("#metric-tabs", "t => { t.scrollLeft = t.scrollWidth; }")
+        page.wait_for_function("document.getElementById('metric-tabs').classList.contains('fade-start')")
+        self.assertEqual(fades(page), [True, False, True])
+        # A shared link's tab scrolls to 16 px from the bar's start, clear of the fade.
+        page = self.open("?metric=terminalbench_v4_0", viewport=MOBILE, has_touch=True)
+        self.assertEqual(fades(page), [True, True, True])
+        inset = page.evaluate("""() => document.querySelector('#metric-tabs [aria-current="true"]').getBoundingClientRect().left
+            - document.getElementById('metric-tabs').getBoundingClientRect().left""")
+        self.assertAlmostEqual(inset, 16, delta=1)
+
     # ---------- Pure helpers ----------
     def test_cost_formatter(self):
         page = self.open()

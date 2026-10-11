@@ -88,6 +88,7 @@
   .brand strong { font-size: 24px; font-weight: 450; letter-spacing: -1.2px; }
   .brand strong span { color: var(--accent); }
   .view-tabs {
+    --tab-inset: 16px;  /* the fade width, and where a scrolled-to tab starts */
     display: flex; align-self: stretch; align-items: stretch; gap: 22px; min-width: 0;
     overflow-x: auto; scrollbar-width: none;
   }
@@ -101,6 +102,14 @@
     height: 2px; border-radius: 2px; background: var(--accent);
   }
   .tab-divider { flex-shrink: 0; align-self: center; width: 1px; height: 14px; background: var(--line-2); }
+  /* An overflowing tab bar fades out at the edge where tabs are scrolled out of view. The
+     first mask layer keeps the mobile top border. */
+  .view-tabs.fade-start, .view-tabs.fade-end {
+    mask: linear-gradient(#000 0 0) top / 100% 1px no-repeat,
+      linear-gradient(to right, transparent, #000 var(--fade-start, 0px), #000 calc(100% - var(--fade-end, 0px)), transparent);
+  }
+  .view-tabs.fade-start { --fade-start: var(--tab-inset); }
+  .view-tabs.fade-end { --fade-end: var(--tab-inset); }
   .header-actions { display: flex; align-items: center; gap: 2px; margin-left: auto; flex-shrink: 0; }
   .icon-button {
     display: flex; align-items: center; justify-content: center;
@@ -1540,7 +1549,14 @@ function fitText(text, font, max) {
   }
   return text.slice(0, lo).trimEnd() + "…";
 }
-document.fonts?.addEventListener("loadingdone", () => { textWidths.clear(); renderChart(); });
+// DM Sans changes the tab widths too: the active tab scrolls back to its inset, unless the
+// user has scrolled the tab bar since.
+document.fonts?.addEventListener("loadingdone", () => {
+  textWidths.clear();
+  renderChart();
+  if (els.tabs.scrollLeft === tabsScrolledTo) scrollToActiveTab();
+  fadeTabEdges();
+});
 
 function themeColors() {
   if (!themeColorCache) {
@@ -1554,6 +1570,26 @@ function themeColors() {
 
 /* ---------- Header ---------- */
 let tabsScrolledFor = null;  // the benchmark whose tab was last scrolled into view
+let tabsScrolledTo = null;   // its scroll position then, to tell whether the user has scrolled since
+
+/** Fades the tab bar's edges where tabs are scrolled out of view. */
+function fadeTabEdges() {
+  const t = els.tabs;
+  t.classList.toggle("fade-start", t.scrollLeft > 1);
+  t.classList.toggle("fade-end", t.scrollWidth - t.clientWidth - t.scrollLeft > 1);
+}
+els.tabs.addEventListener("scroll", fadeTabEdges, { passive: true });
+new ResizeObserver(fadeTabEdges).observe(els.tabs);
+
+/** When the tab bar overflows, the active tab scrolls to one inset from its start, clear of the fade. */
+function scrollToActiveTab() {
+  const t = els.tabs, active = byKey(t, state.metric);
+  if (active && t.scrollWidth > t.clientWidth) {
+    t.scrollLeft += active.getBoundingClientRect().left - t.getBoundingClientRect().left -
+      parseFloat(getComputedStyle(t).getPropertyValue("--tab-inset"));
+  }
+  tabsScrolledTo = t.scrollLeft;
+}
 
 function renderHeader() {
   let html = "";
@@ -1563,14 +1599,11 @@ function renderHeader() {
     html += `<button type="button" data-key="${m.id}" aria-current="${m.id === state.metric}">${esc(m.tab)}</button>`;
   });
   setHTML(els.tabs, html);
-  // When the tab bar overflows, a new benchmark's tab scrolls to 16px from the bar's start.
   if (tabsScrolledFor !== state.metric) {
     tabsScrolledFor = state.metric;
-    const active = byKey(els.tabs, state.metric);
-    if (active && els.tabs.scrollWidth > els.tabs.clientWidth) {
-      els.tabs.scrollLeft += active.getBoundingClientRect().left - els.tabs.getBoundingClientRect().left - 16;
-    }
+    scrollToActiveTab();
   }
+  fadeTabEdges();
   const light = state.theme === "light";
   els.theme.innerHTML = icon(light ? "moon" : "sun");
   els.theme.title = light ? "Switch to dark mode" : "Switch to light mode";
