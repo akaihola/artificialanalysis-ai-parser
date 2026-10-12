@@ -110,8 +110,10 @@ Screenshots and the extracted bundle were kept out of the repository
   colours and default selection (the 8 Frontier families except Sonnet 5.5 and Gemini
   3.8 Flash; reasoning level `none` hidden) into a config block at the top of the
   script.
-- When the selected benchmark has fewer than 3 points, show an empty-state hint with a
-  "Show models with <benchmark> data" button.
+- When the selected benchmark has fewer than 3 points, explain which filters hide
+  the data. Offer to lift reasoning/deprecation filters, including both together,
+  without changing selected families. Offer "Show models with <benchmark> data"
+  when more families are needed.
 - Lab-wide select/deselect through the context menu ("Show only / Hide <lab>"); no
   visible per-lab checkboxes.
 - The sidebar lists only families with at least one variant that has a cost.

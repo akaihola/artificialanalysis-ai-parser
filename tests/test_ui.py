@@ -539,6 +539,31 @@ class PageTests(unittest.TestCase):
         self.assertEqual(page.text_content("#empty-title"), "Only 1 selected model has LiveBench Agentic Coding data")
         self.assertEqual(page.text_content("#empty-action"), "Show models with LiveBench Agentic Coding data")
 
+    def test_empty_state_lifts_combined_filters_without_changing_families(self):
+        # Without its high variant, deprecated Sonnet 5 adds one point at a hidden level.
+        one_sonnet = [m for m in MODELS if m["slug"] != "claude-sonnet-5-high"]
+        for selected, excluded, models, shown, hidden, expected in [
+            ("claude-sonnet-5,grok-4-7", "max", MODELS, "1 point", "2 more Intelligence points are",
+             {"claude-sonnet-5-high", "claude-sonnet-5", "grok-4-7"}),
+            ("claude-sonnet-5,claude-opus-5-5", "high,max", MODELS, "no points", "4 more Intelligence points are",
+             {"claude-sonnet-5-high", "claude-sonnet-5", "claude-opus-5-5-high", "claude-opus-5-5"}),
+            ("claude-sonnet-5,gpt-oss-120b", "max", one_sonnet, "2 points", "1 more Intelligence point is",
+             {"claude-sonnet-5", "gpt-oss-120b", "gpt-oss-120b-low"}),
+        ]:
+            with self.subTest(selected=selected):
+                page = self.open(f"?models={selected}&hide-reasoning={excluded}", models=models)
+                self.assertEqual(page.text_content("#empty-title"),
+                                 f"Hidden reasoning levels and deprecated models leave {shown}")
+                self.assertEqual(page.text_content("#empty-text"),
+                                 f"{hidden} hidden by these filters. The chart needs at least 3.")
+                page.click("#empty-action:text-is('Show all reasoning levels and deprecated models')")
+                self.assertTrue(page.is_hidden("#empty-state"))
+                self.assertEqual(self.points(page), expected)
+                self.assertEqual(self.state(page, "selected"), selected.split(","))
+                self.assertEqual(self.state(page, "excluded"), [])
+                self.assertTrue(self.state(page, "deprecated"))
+                self.assertEqual(query(page), {"models": selected, "hide-reasoning": "", "deprecated": "true"})
+
     def test_defaults_missing_from_the_data(self):
         page = self.open(models=[m for m in MODELS if m["family"] != "gpt-6-luna"])
         self.assertEqual(page.text_content("#model-count"), "7")
