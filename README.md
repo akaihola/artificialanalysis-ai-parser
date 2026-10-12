@@ -15,7 +15,7 @@ In August 2026 the site changed its data model again. The `hostsModels` key is g
 The Python parser in this project:
 
 - **Extracts** the `rows` array from the RSC stream with a standard JSON decoder
-- **Deduplicates** ~1,100 host-model pairs down to ~470 unique models. For each model, it prefers the endpoint of the model creator. If there is none, it takes the endpoint with the lowest cost per task. Endpoints with a zero price count only when no host has prices. The chosen endpoint supplies the provider and prices
+- **Deduplicates** ~1,100 host-model pairs down to ~470 unique models. Endpoints with both token prices known and at least one positive price rank first. Among those, it prefers the model creator's endpoint, then the lowest cost per task. The chosen endpoint supplies the provider and prices
 - **Joins** model-level data from the models leaderboard: benchmark scores, cost per task and performance (one value per model variant), plus the family, lab and release date from the site navigation in the same stream
 - **Cleans** the output to only essential fields (pricing, IQ, speed, cost per task, response time, context window)
 - **Outputs** `models.json` — about 450 models with pricing, ready for downstream use
@@ -117,7 +117,7 @@ The RSC endpoint requires specific headers (`rsc: 1`, `next-router-state-tree`, 
 ## Limitations
 
 - **No API key = fragile.** The RSC endpoint is an internal Next.js mechanism. If the site changes its chunk format again, the bracket-counting may need updating.
-- **Placeholder values.** The RSC stream marks missing values with strings such as `"$undefined"`. The parser turns them into `null`. Some entries hold a reference string instead of a nested object. Deduplication keeps one endpoint per model: priced endpoints beat unpriced ones (a missing or zero price counts as unpriced), then the model creator's own endpoint wins, then the lowest host cost per task (a missing one sorts last). Models priced zero at every host are dropped.
+- **Placeholder values.** The RSC stream marks missing values with strings such as `"$undefined"`. The parser turns them into `null`. Some entries hold a reference string instead of a nested object. Deduplication keeps one endpoint per model: priced endpoints beat unpriced ones, then the model creator's own endpoint wins, then the lowest host cost per task (a missing one sorts last). A priced endpoint has two known, finite, nonnegative token prices, with at least one positive. Input-only and output-only charges count. Models without a priced endpoint, including those priced zero at every host, are dropped.
 - **Official API is preferred** for production use. This parser is a workaround for when you don't have (or don't want) an API key. See [artificialanalysis.ai/documentation](https://artificialanalysis.ai/documentation) for the free API tier (1,000 req/day).
 
 ## Companion: the intelligence vs cost page

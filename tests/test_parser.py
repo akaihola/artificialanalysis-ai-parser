@@ -147,13 +147,16 @@ class ParserTests(unittest.TestCase):
                  (rows, stream("models", [{"slug": "test", "scicode": 0.5, "terminalBench40": 0.5,
                                            "intelligenceIndexCostPerTask": 0.5}]))]
         for section, field, values in [
-            ("pricing", "price1mInputTokens", [None, 0]),
+            ("pricing", "price1mInputTokens", [None]),
             ("model", "deprecated", [True]),
         ]:
             for value in values:
                 row = copy.deepcopy(ROW)
                 row[section][field] = value
                 cases.append((stream("rows", [row]), valid))
+        free: dict = copy.deepcopy(ROW)
+        free["pricing"].update(price1mInputTokens=0, price1mOutputTokens=0)
+        cases.append((stream("rows", [free]), valid))
         # The host row's costPerTask (0.5 in ROW) must not stand in for the model-level cost.
         for value in [None, "$undefined", 0, -1, True, "bad", float("inf"), float("nan")]:
             cases.append((rows, scores(scicode=0.5, terminalBench40=0.5,
@@ -207,8 +210,13 @@ class ParserTests(unittest.TestCase):
             # Host-level cost and response time no longer matter: model-level data feeds the chart.
             ([host("Third", (0.75, 2.95), cost=1, e2e=5), host("Lab", (0.3, 1.2))], "Lab"),
             ([host("Lab", ("$undefined", 1.2)), host("Third", (0.75, 2.95))], "Third"),
-            # A free endpoint must not hide a priced host (main() drops zero prices).
+            # A free endpoint must not hide a host charging for input, output or both.
             ([host("Lab", (0, 0), cost=1, e2e=5), host("Third", (0.18, 0.5))], "Third"),
+            ([host("Lab", (0, 0)), host("Third", (0.18, 0))], "Third"),
+            ([host("Lab", (0, 0)), host("Third", (0, 0.5))], "Third"),
+            ([host("Lab", (0.18, 0)), host("Third", (0.18, 0.5))], "Lab"),
+            ([host("Lab", (0, 0.5)), host("Third", (0.18, 0.5))], "Lab"),
+            ([host("Lab", (0.18, None)), host("Third", (0.18, 0))], "Third"),
             ([host("Free", (0, 0), cost=0.1), host("Dear", (2, 8), cost=3),
               host("Cheap", (1, 4), cost=2), host("Unknown", (0.5, 1))], "Cheap"),
             # Zero price everywhere: the model is dropped later, as before.
@@ -217,6 +225,25 @@ class ParserTests(unittest.TestCase):
             with self.subTest(expected=expected):
                 [best] = parser.deduplicate_models(hosts)
                 self.assertEqual(best["host"]["name"], expected)
+
+    def test_partially_paid_endpoints_survive_refresh(self):
+        for prices in [(0.05, 0), (0, 0.05)]:
+            for minimal in [False, True]:
+                for with_free_host in [False, True]:
+                    with self.subTest(prices=prices, minimal=minimal, with_free_host=with_free_host), tempfile.TemporaryDirectory() as directory:
+                        paid: dict = copy.deepcopy(ROW)
+                        paid["model"]["creator"] = {"name": "Lab"}
+                        paid["host"] = {"name": "Third"}
+                        paid["pricing"].update(price1mInputTokens=prices[0], price1mOutputTokens=prices[1])
+                        free = copy.deepcopy(paid)
+                        free["host"] = {"name": "Lab"}
+                        free["pricing"].update(price1mInputTokens=0, price1mOutputTokens=0)
+                        rows = [free, paid] if with_free_host else [paid]
+                        data = self.run_main(directory, stream("rows", rows),
+                                             scores(scicode=0.5, terminalBench40=0.5), minimal)
+                        self.assertEqual(len(data), 1)
+                        self.assertEqual(data[0]["provider"], "Third")
+                        self.assertEqual((data[0]["price_1m_input_tokens"], data[0]["price_1m_output_tokens"]), prices)
 
     def test_model_level_metadata_and_performance(self):
         row = copy.deepcopy(ROW)

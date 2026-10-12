@@ -194,6 +194,14 @@ def measurement_or_none(v):
     return v if type(v) in (int, float) and math.isfinite(v) and v >= 0 else None
 
 
+def has_paid_prices(input_price, output_price):
+    """Both token prices must be known, with at least one positive."""
+    input_price = measurement_or_none(input_price)
+    output_price = measurement_or_none(output_price)
+    return (input_price is not None and output_price is not None
+            and (input_price > 0 or output_price > 0))
+
+
 def parse_effort(name, reasoning):
     """Return (effort, effort_order) parsed from an AA model name.
 
@@ -307,9 +315,9 @@ def deduplicate_models(entries):
     Many hosts serve the same model. Price and speed differ per host.
     We pick one entry per model slug with these rules, in this order:
 
-    1. Prefer an entry with non-zero input and output prices. main()
-       drops models without them, so a free endpoint (Google's 0/0 for
-       Gemma) must not win over a priced host.
+    1. Prefer an entry with known input and output prices and at least
+       one positive price. main() uses the same rule, so a free endpoint
+       (Google's 0/0 for Gemma) must not win over a priced host.
     2. Prefer the entry from the model creator's own API.
     3. Prefer the entry with the lowest cost per task.
 
@@ -332,8 +340,7 @@ def deduplicate_models(entries):
         host = dict_or_empty(entry.get("host"))
         creator = dict_or_empty(model.get("creator"))
         cost_per_task = value_or_none(pricing.get("costPerTask"))
-        has_prices = bool(value_or_none(pricing.get("price1mInputTokens"))
-                          and value_or_none(pricing.get("price1mOutputTokens")))
+        has_prices = has_paid_prices(pricing.get("price1mInputTokens"), pricing.get("price1mOutputTokens"))
         first_party = host.get("name") == creator.get("name")
         # min() picks the best entry, so "good" must sort as "small".
         return (not has_prices, not first_party,
@@ -508,7 +515,7 @@ def main():
     models = [clean_model(e, indexes, livebench) for e in deduped]
 
     # Remove entries without pricing
-    models_with_price = [m for m in models if m["price_1m_input_tokens"] and m["price_1m_output_tokens"]]
+    models_with_price = [m for m in models if has_paid_prices(m["price_1m_input_tokens"], m["price_1m_output_tokens"])]
     print(f"Models with pricing: {len(models_with_price)}")
 
     # Preserve the last usable dataset when the score feed or slug join breaks.

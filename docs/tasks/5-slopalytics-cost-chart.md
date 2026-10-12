@@ -53,7 +53,8 @@ Screenshots and the extracted bundle were kept out of the repository
   open-weights get the Codex plan (gpt-oss stays at API price).
 - Do not fetch AA model pages (tokens per task and time per task are not collected).
 - Models priced zero at every host stay excluded. A model with a $0 endpoint and a
-  priced host is kept, using the priced host.
+  priced host is kept, using the priced host. Both token prices must be known, with
+  at least one positive; the other may be zero.
 
 ### Page layout
 
