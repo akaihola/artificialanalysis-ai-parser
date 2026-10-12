@@ -1329,6 +1329,22 @@ class PageTests(unittest.TestCase):
         self.assertEqual(page.evaluate("window.__writes"), 2)
 
     # ---------- Mobile ----------
+    def test_mobile_escape_closes_sheet_before_clearing_focused_search(self):
+        page = self.open(viewport=MOBILE, has_touch=True)
+        page.tap("#sheet-toggle")
+        page.fill("#model-search", "opus")
+        self.assertEqual(page.evaluate("document.activeElement.id"), "model-search")
+        page.keyboard.press("Escape")
+        self.assertTrue(page.is_hidden("#sidebar"))
+        self.assertFalse(self.state(page, "sheetOpen"))
+        self.assertEqual(self.state(page, "query"), "opus")
+        self.assertEqual(page.input_value("#model-search"), "opus")
+        self.assertEqual(page.evaluate("document.activeElement.id"), "sheet-toggle")
+        page.keyboard.press("Escape")
+        self.assertTrue(page.is_hidden("#sidebar"))
+        self.assertEqual(self.state(page, "query"), "")
+        self.assertEqual(page.input_value("#model-search"), "")
+
     def test_mobile_sheet_and_tap_to_pin(self):
         page = self.open(viewport=MOBILE, has_touch=True)
         self.assertTrue(self.state(page, "compact"))
@@ -1349,10 +1365,6 @@ class PageTests(unittest.TestCase):
         page.tap('.model-row[data-family="grok-4-7"]')
         self.assertEqual(" ".join(page.text_content("#sheet-toggle").split()), "Models 7")
         page.tap('.model-row[data-family="grok-4-7"]')
-        page.fill("#model-search", "gem")
-        page.keyboard.press("Escape")
-        self.assertEqual(page.input_value("#model-search"), "")
-        self.assertTrue(page.is_visible("#sidebar"))
         page.keyboard.press("Escape")
         self.assertTrue(page.is_hidden("#sidebar"))
         page.tap("#sheet-toggle")

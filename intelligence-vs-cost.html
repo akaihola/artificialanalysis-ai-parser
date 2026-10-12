@@ -2650,13 +2650,11 @@ window.addEventListener("click", (e) => {
 /**
  * Escape undoes the innermost thing: the context menu or a popover, the models sheet,
  * the search text, chart emphasis (pin, hover, highlights), then fallback full screen.
- * Typing in the search box makes its text the innermost thing.
  */
-function handleEscape(target) {
+function handleEscape() {
   const clearSearch = () => { state.query = ""; renderModelBrowser(); return true; };
   if (state.menu) { closeMenu(); return true; }
   if (state.popover) { setPopover(null, true); return true; }
-  if (target === els.search && state.query) return clearSearch();
   if (state.sheetOpen && state.compact) { setSheet(false, true); return true; }
   if (state.query) return clearSearch();
   if (state.pinned || state.hovered || state.labelHover || state.highlights.length) {
@@ -2673,7 +2671,7 @@ function handleEscape(target) {
 }
 window.addEventListener("keydown", (e) => {
   if (e.key === "Escape") {
-    if (handleEscape(e.target)) e.preventDefault();
+    if (handleEscape()) e.preventDefault();
   } else if (e.key === "/" && !(e.target instanceof HTMLInputElement) && state.data) {
     e.preventDefault();
     if (state.compact) setSheet(true);
