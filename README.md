@@ -244,6 +244,16 @@ can pick a release that expects other builds. Without Playwright,
 Only if the matching Chromium and Firefox builds are missing, install them once with
 `uv run --with 'playwright~=1.63.0' playwright install chromium firefox`.
 
+## Recommended agent skills
+
+Working on this repository with a coding agent goes better with these skill
+collections. They are not part of the repository; clone them into
+`.agents/vendor/`, link the skills from `.agents/skills/` and `.claude/skills/`,
+and keep them out of Git:
+
+- [mattpocock/skills](https://github.com/mattpocock/skills): the skills in its
+  `.claude-plugin/plugin.json`.
+
 ## License
 
 GPL-3.0 — Copyright (C) 2026 Anton Maurer
