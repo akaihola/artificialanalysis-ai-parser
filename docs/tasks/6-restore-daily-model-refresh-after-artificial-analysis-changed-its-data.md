@@ -5,19 +5,20 @@ The parser now reads Artificial Analysis' complete public downloads, including
 deprecated models, and the original LiveBench benchmark from its official archive.
 The previous daily refresh stopped at `rows not found in response`.
 
-The fix was merged and verified on GitHub on 2026-11-11 after Antti authorized
-publishing it. No implementation or deployment work remains. Owner: Antti for
-acceptance. Next action: open [the successful refresh run], confirm the parser
-tests, regeneration and commit steps are green, and reply `accept refresh repair`
-in the T3 discussion that requested the fix. Codex then records acceptance.
-The published [chart] serves the updated code and 442-model dataset.
+The refresh fix was merged on 2026-11-11 after Antti authorized publishing it,
+and [the refresh run] passed. Antti then reported that Max response time no
+longer changes the chart: all 94 chart-eligible current models have null timing
+data. Passing the workflow did not establish that this feature still worked.
+The task is reopened. Owner: Codex in the originating T3 discussion. Next action:
+restore comparable response-time data, add a regression check for the real
+slider, and verify the corrected refresh and published [chart].
 
 Failure: [daily refresh job], 2026-11-10.
 
 ## Verification on 2026-11-11
 
 - PR #2 merged as `c8dfb046d05cf3ba5f1b74c835268c35de5418eb`.
-  Codex dispatched [the successful refresh run] against this commit. GitHub
+  Codex dispatched [the refresh run] against this commit. GitHub
   installed the dependency, passed all 24 parser tests, downloaded the full
   provider and model data, and saved 442 priced models. The workflow pushed
   its data update to master as `f5bb827`.
@@ -58,6 +59,6 @@ and existing benchmark meanings and output-preservation checks remain intact.
 
 [daily refresh job]: https://github.com/akaihola/artificialanalysis-ai-parser/actions/runs/42805407520/job/129793147490
 [the merged fix]: https://github.com/akaihola/artificialanalysis-ai-parser/pull/2
-[the successful refresh run]: https://github.com/akaihola/artificialanalysis-ai-parser/actions/runs/42975990794
+[the refresh run]: https://github.com/akaihola/artificialanalysis-ai-parser/actions/runs/42975990794
 [chart]: https://akaihola.github.io/artificialanalysis-ai-parser/intelligence-vs-cost.html
 [the project acquisition skill]: ../../.agents/skills/artificial-analysis-data/SKILL.md
