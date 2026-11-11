@@ -9,14 +9,23 @@ The refresh fix was merged on 2026-11-11 after Antti authorized publishing it,
 and [the refresh run] passed. Antti then reported that Max response time no
 longer changes the chart: all 94 chart-eligible current models have null timing
 data. Passing the workflow did not establish that this feature still worked.
-The task is reopened. Owner: Codex in the originating T3 discussion. Next action:
-restore comparable response-time data, add a regression check for the real
-slider, and verify the corrected refresh and published [chart].
+The task is reopened. The prepared correction restores a clearly marked
+500-token estimate from current first-answer latency and output speed. Owner:
+Codex in the originating T3 discussion. Next action: publish the correction,
+run the updated GitHub workflow, and verify the slider on the published [chart].
 
 Failure: [daily refresh job], 2026-11-10.
 
 ## Verification on 2026-11-11
 
+- The response-time correction passed 29 parser tests and eight Chromium/Firefox
+  checks. The refreshed dataset has 393 marked estimates, including 92 of the
+  94 current models with an Intelligence score and positive task cost. New
+  browser checks load the actual dataset, lower the slider to 100 seconds,
+  verify that slow models fade and leave the table, and restore No limit.
+- A regression test against the previous parser demonstrated that it accepted
+  refreshes with no usable current chart timings. The corrected parser rejects
+  those refreshes before replacing the existing dataset.
 - PR #2 merged as `c8dfb046d05cf3ba5f1b74c835268c35de5418eb`.
   Codex dispatched [the refresh run] against this commit. GitHub
   installed the dependency, passed all 24 parser tests, downloaded the full
@@ -41,9 +50,11 @@ Failure: [daily refresh job], 2026-11-10.
 ## Source limitations
 
 The full Artificial Analysis feeds no longer contain the former end-to-end
-response-time measurement. The refreshed data leaves it null, so the chart's
-time filter includes those models. Task execution time measures something else
-and is not used as a substitute.
+response-time measurement. The correction estimates a 500-token answer using
+model-level time to first answer token plus 500 divided by output tokens per
+second, including reasoning time. Estimates are marked `≈`; their source
+aggregates differ from the old reported median. Unknown first-answer latency
+stays unknown. Task execution time measures something else and is not used.
 
 Only two models have both an AIME 2025 score and a positive task cost. Math's
 chart needs three points and shows its insufficient-data explanation; individual

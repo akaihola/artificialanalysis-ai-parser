@@ -24,8 +24,20 @@ to reproduce these formats. Recheck live responses when a refresh fails.
 - Benchmark fractions moved under `scores`: `scicode`, `terminalbench-4-0`
   and `aime-2025`. Model-level `outputSpeed` and `timeToFirstToken` replace the
   former median-prefixed fields. `intelligenceIndexCostPerTask` remains present.
-  End-to-end response time is absent. Keep it unknown: the new
+  The former end-to-end total is absent, but `timeToFirstAnswerToken` includes
+  thinking. For the slider, derive a clearly marked 500-token estimate as
+  `timeToFirstAnswerToken + 500 / outputSpeed`, using valid finite model-level
+  inputs with positive speed. Retain a reported total when present. Unknown
+  first-answer latency must stay unknown: `timeToFirstToken` can omit reasoning.
   `intelligenceIndexTimePerTask` measures a different workload.
+- Verified during the response-time regression on 2026-11-11: model pages such
+  as `/models/gpt-4-1?_rsc=hgvan` also publish `headline` timing components and
+  `endToEndTime` in full chart manifests. The shipped metric descriptor defines
+  the latter as actual request-to-final-token time averaged across Performance
+  v3 workloads, not a fixed 500-token answer. No extra model-page request is
+  needed for the slider's estimate. Current timing aggregates differ from the
+  old reported median, so retain `e2e_response_time_estimated` in minimal output
+  and show the estimate marker in chart details and the table.
 - `fetch_rsc()` appends the decoded complete array to the returned bytes.
   Save that result for replay with `--file` and `--models-file`. A saved raw
   page alone contains only the current-model subset. Manifest failures must
