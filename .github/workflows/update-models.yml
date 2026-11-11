@@ -22,6 +22,12 @@ jobs:
         with:
           ref: master
 
+      - name: Install parser dependencies
+        run: python3 -m pip install -r requirements.txt
+
+      - name: Run parser regression tests
+        run: python3 -m unittest tests.test_parser -v
+
       - name: Regenerate models.json
         run: python3 artificialanalysis.ai-parser.py --minimal --pretty
 

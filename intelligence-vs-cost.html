@@ -1918,9 +1918,9 @@ function renderHeaderButtons() {
 }
 
 /* ---------- Empty state ---------- */
-function familiesWithData(metricId) {
+function familiesWithData(metricId, deprecated = state.deprecated) {
   return [...state.data.families.values()]
-    .filter((f) => (state.deprecated || !f.deprecated) && f.variants.some((v) => v.scores[metricId] != null))
+    .filter((f) => (deprecated || !f.deprecated) && f.variants.some((v) => v.scores[metricId] != null))
     .map((f) => f.id);
 }
 
@@ -1973,8 +1973,15 @@ function renderEmpty(m, show) {
         ? `Only ${families} selected model${families === 1 ? " has" : "s have"} ${tab} data`
         : `No ${tab} data for the selected models`;
       text = `The chart needs at least ${need} points with data.`;
-      const more = !familiesWithData(m.metric.id).every((f) => state.selected.includes(f)) || state.excluded.length > 0;
-      if (more) action = { id: "data", label: `Show models with ${tab} data` };
+      const currentFamilies = familiesWithData(m.metric.id);
+      const allFamilies = familiesWithData(m.metric.id, true);
+      const currentRows = rowsWith({ selected: currentFamilies, excluded: [] });
+      const allRows = rowsWith({ selected: allFamilies, excluded: [], deprecated: true });
+      const more = !currentFamilies.every((f) => state.selected.includes(f)) || state.excluded.length > 0;
+      if (!state.deprecated && currentRows.length < need && allRows.length >= need) {
+        text += ` More ${tab} results are available for deprecated models.`;
+        action = { id: "deprecated", label: "Show deprecated" };
+      } else if (more) action = { id: "data", label: `Show models with ${tab} data` };
     }
   }
   els.emptyTitle.textContent = title;

@@ -1,5 +1,7 @@
 import contextlib
 import copy
+import gzip
+import hashlib
 import importlib.util
 import io
 import json
@@ -9,9 +11,12 @@ from pathlib import Path
 from unittest.mock import patch
 from urllib.error import URLError
 
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
 SPEC = importlib.util.spec_from_file_location(
     "parser", Path(__file__).resolve().parents[1] / "artificialanalysis.ai-parser.py"
 )
+assert SPEC is not None and SPEC.loader is not None
 parser = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(parser)
 
@@ -22,7 +27,7 @@ LIVEBENCH_INPUT = (
     json.loads((FIXTURES / "livebench-metadata.json").read_text()),
 )
 
-ROW = {
+ROW: dict = {
     "label": "Test model",
     "model": {"slug": "test", "intelligenceIndex": 42, "aime25": 0.75},
     "pricing": {
@@ -53,7 +58,79 @@ def scores(slug="test", **fields):
         {"slug": slug, "intelligenceIndexCostPerTask": 0.25, **fields}])
 
 
+class Download(io.BytesIO):
+    status = 200
+
+
 class ParserTests(unittest.TestCase):
+    def test_current_leaderboard_schema(self):
+        fixture = json.loads(
+            (FIXTURES / "aa-leaderboards-2026-11-11.json").read_text()
+        )
+        rows_raw = stream("initialRows", fixture["rows"])
+        models_raw = stream("modelsAndReleases", fixture["modelsAndReleases"])
+        models_raw += b"\n" + stream("initialModels", fixture["models"])
+        with tempfile.TemporaryDirectory() as directory:
+            data = self.run_main(directory, rows_raw, models_raw, minimal=True,
+                                 livebench_slug="gpt-6-astra")
+        by_slug = {m["slug"]: m for m in data}
+        self.assertEqual(set(by_slug), {"gpt-6-astra", "glm-4-5v"})
+        for source in fixture["models"]:
+            model = by_slug[source["slug"]]
+            self.assertEqual(model["deprecated"], source["deprecated"])
+            scicode = source["scores"].get("scicode")
+            terminalbench = source["scores"].get("terminalbench-4-0")
+            self.assertEqual(model["coding_index"], scicode * 100 if scicode is not None else None)
+            self.assertEqual(
+                model["terminalbench_v4_0"],
+                terminalbench * 100 if terminalbench is not None else None,
+            )
+            self.assertEqual(model["output_tokens_per_second"], source["outputSpeed"])
+            self.assertEqual(
+                model["time_to_first_token_ms"],
+                round(source["timeToFirstToken"] * 1000, 1),
+            )
+            self.assertIsNone(model["e2e_response_time_s"])
+        self.assertEqual(
+            by_slug["glm-4-5v"]["math_index"],
+            next(m for m in fixture["models"] if m["slug"] == "glm-4-5v")
+            ["scores"]["aime-2025"] * 100,
+        )
+
+    def test_full_manifest_includes_deprecated_models(self):
+        fixture = json.loads(
+            (FIXTURES / "aa-leaderboards-2026-11-11.json").read_text()
+        )
+        for url, key, initial in [
+            (parser.RSC_URL, "rows", "initialRows"),
+            (parser.MODELS_RSC_URL, "models", "initialModels"),
+        ]:
+            with self.subTest(url=url):
+                values = fixture[key]
+                # Public page-data key; this synthetic key is only for this test.
+                public_key = bytes(range(32))
+                nonce = hashlib.sha256(public_key).digest()[:12]
+                payload = gzip.compress(json.dumps(values).encode(), mtime=0)
+                encrypted = AESGCM(public_key).encrypt(nonce, payload, None)
+                page = stream(initial, [v for v in values if not v.get(
+                    "deprecated", v.get("model", {}).get("deprecated"))])
+                page += b'\n2:' + json.dumps({"manifest": {
+                    "path": "/data/test.txt", "key": public_key.hex(),
+                }}).encode()
+                responses = [Download(page), Download(encrypted)]
+                with patch.object(parser, "urlopen", side_effect=responses) as fetch:
+                    raw = parser.fetch_rsc(url)
+                if key == "rows":
+                    self.assertEqual(parser.extract_rows(raw), values)
+                else:
+                    indexes = parser.extract_model_indexes(raw)
+                    self.assertIn("aime25", indexes["glm-4-5v"])
+                self.assertEqual(
+                    fetch.call_args_list[1].args[0].full_url,
+                    "https://artificialanalysis.ai/data/test.txt",
+                )
+                self.assertNotIn("rsc", fetch.call_args_list[1].args[0].headers)
+
     def test_scicode_join_and_scaling(self):
         raw = stream("models", [{"slug": "test"}, {"slug": "other"}])
         raw += b"\n" + stream("models", [
@@ -67,6 +144,53 @@ class ParserTests(unittest.TestCase):
         self.assertEqual(model["agentic_index"], 8)
         self.assertEqual(model["intelligence_index"], 42)
         self.assertEqual(model["math_index"], 75)
+
+    def test_current_score_validation(self):
+        row = copy.deepcopy(ROW)
+        row["model"].pop("aime25")
+        for source, target in [("scicode", "coding_index"),
+                               ("terminalbench-4-0", "terminalbench_v4_0"),
+                               ("aime-2025", "math_index")]:
+            for value in [None, "$undefined", "0.5", True, -1, 1.1,
+                          float("nan"), float("inf"), 0, 0.25, 1]:
+                with self.subTest(source=source, value=value):
+                    raw = stream("initialModels", [
+                        {"slug": "test", "scores": {source: value}}
+                    ])
+                    model = parser.clean_model(row, parser.extract_model_indexes(raw))
+                    expected = (value * 100 if isinstance(value, (int, float))
+                                and not isinstance(value, bool) and 0 <= value <= 1
+                                else None)
+                    self.assertEqual(model[target], expected)
+
+    def test_manifest_failure_preserves_output(self):
+        public_key = bytes(range(32))
+        nonce = hashlib.sha256(public_key).digest()[:12]
+        manifest = {"path": "/data/test.txt", "key": public_key.hex()}
+        bad_payloads = [b"not ciphertext"] + [
+            AESGCM(public_key).encrypt(nonce, value, None) for value in [
+                b"not gzip", gzip.compress(b'[{'), gzip.compress(b'{}'),
+                gzip.compress(b'[]'), gzip.compress(b'["reference"]'),
+                gzip.compress(b'[]')[:-2],
+            ]
+        ]
+        cases: list = [(manifest, payload) for payload in bad_payloads]
+        cases += [([], b""), ({"path": "https://example.com/data.txt"}, b""),
+                  (manifest, URLError("offline"))]
+        for index, (metadata, payload) in enumerate(cases):
+            with self.subTest(case=index), tempfile.TemporaryDirectory() as directory:
+                output = Path(directory) / "output.json"
+                output.write_bytes(b"previous dataset\n")
+                # A current-only preview must never hide a full-download failure.
+                page = stream("initialRows", [ROW])
+                page += b'\n2:' + json.dumps({"manifest": metadata}).encode()
+                responses = [Download(page), payload if isinstance(payload, Exception)
+                             else Download(payload)]
+                with patch("sys.argv", ["parser", "--out", str(output)]), patch.object(
+                    parser, "urlopen", side_effect=responses
+                ), contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit):
+                    parser.main()
+                self.assertEqual(output.read_bytes(), b"previous dataset\n")
 
     def test_terminalbench_join_and_version(self):
         raw = stream("models", [
@@ -92,13 +216,16 @@ class ParserTests(unittest.TestCase):
                 with self.subTest(source=source, value=value):
                     raw = stream("models", [{"slug": "test", source: value}])
                     model = parser.clean_model(ROW, parser.extract_model_indexes(raw))
-                    expected = value * 100 if type(value) in (int, float) and 0 <= value <= 1 else None
+                    expected = (value * 100 if isinstance(value, (int, float))
+                                and not isinstance(value, bool) and 0 <= value <= 1
+                                else None)
                     self.assertEqual(model[target], expected)
         for scores in [{}, {"codingIndex": 99}, {"slug": "test-other", "scicode": 0.5}]:
             raw = stream("models", [{"slug": "test", **scores}])
             self.assertIsNone(parser.clean_model(ROW, parser.extract_model_indexes(raw))["coding_index"])
 
-    def run_main(self, directory, rows, scores, minimal=False, livebench=LIVEBENCH_INPUT):
+    def run_main(self, directory, rows, scores, minimal=False, livebench=LIVEBENCH_INPUT,
+                 livebench_slug="test"):
         output = Path(directory) / "output.json"
         output.write_bytes(b"previous dataset\n")
         args = ["parser", "--out", str(output)] + (["--minimal"] if minimal else [])
@@ -106,7 +233,7 @@ class ParserTests(unittest.TestCase):
             parser, "fetch_rsc", side_effect=[rows, scores]
         ), patch.object(parser, "fetch_livebench", return_value=livebench,
                         side_effect=livebench if isinstance(livebench, Exception) else None), patch.dict(
-            parser.LIVEBENCH_MODELS, {"gpt-6-astra-max": ("test", "max", None)}
+            parser.LIVEBENCH_MODELS, {"gpt-6-astra-max": (livebench_slug, "max", None)}
         ), contextlib.redirect_stdout(io.StringIO()):
             parser.main()
         return json.loads(output.read_text())
@@ -404,20 +531,26 @@ class ParserTests(unittest.TestCase):
                 self.run_main(directory, stream("rows", [ROW]), valid, livebench=URLError("offline"))
             self.assertEqual((Path(directory) / "output.json").read_bytes(), b"previous dataset\n")
 
-    def test_livebench_fetch_uses_one_commit(self):
-        commit = LIVEBENCH_INPUT[2]["commit"]
-        responses = [json.dumps({"sha": commit}).encode(), LIVEBENCH_INPUT[0],
-                     json.dumps(LIVEBENCH_INPUT[1]).encode()]
+    def test_livebench_fetch_uses_official_archive(self):
+        responses = [LIVEBENCH_INPUT[0], json.dumps(LIVEBENCH_INPUT[1]).encode()]
         with patch.object(parser, "urlopen", side_effect=[io.BytesIO(r) for r in responses]) as download:
             raw, categories, provenance = parser.fetch_livebench()
         self.assertEqual(raw, LIVEBENCH_INPUT[0])
         self.assertEqual(categories, LIVEBENCH_INPUT[1])
-        self.assertEqual(provenance["commit"], commit)
-        for call in download.call_args_list[1:]:
-            self.assertIn("/" + commit + "/public/", call.args[0].full_url)
+        self.assertIsNone(provenance["commit"])
+        self.assertEqual([call.args[0].full_url for call in download.call_args_list], [
+            "https://livebench.ai/v1/table_2026_06_25.csv",
+            "https://livebench.ai/v1/categories_2026_06_25.json",
+        ])
+        for call in download.call_args_list:
             self.assertNotIn("rsc", call.args[0].headers)
-        with patch.object(parser, "urlopen", return_value=io.BytesIO(b'{"sha":"main"}')), self.assertRaises(ValueError):
-            parser.fetch_livebench()
+        indexes = parser.parse_livebench(raw, categories, provenance)
+        meta = indexes["gpt-6-astra"]["livebench"]
+        self.assertEqual(meta["source_sha256"], hashlib.sha256(raw).hexdigest())
+        self.assertEqual(meta["categories_sha256"], provenance["categories_sha256"])
+        for field in ("source_sha256", "categories_sha256", "source_url", "categories_url"):
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                parser.parse_livebench(raw, categories, {**provenance, field: "wrong"})
 
     def test_livebench_offline_cli(self):
         with tempfile.TemporaryDirectory() as directory:

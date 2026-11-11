@@ -12,21 +12,31 @@ However, after the site's redesign ("A new look for Artificial Analysis"), the o
 
 In August 2026 the site changed its data model again. The `hostsModels` key is gone. The data now lives in a `rows` array with camelCase field names. The new data also contains two useful metrics: the cost to run one benchmark task, and the median end-to-end response time.
 
+In November 2026 the pages began embedding only current models as `initialRows`
+and `initialModels`. The parser follows each page's public data manifest to get
+the complete leaderboard, including deprecated models. It decrypts the AES-GCM
+payload using the key published in that page, then decompresses its gzip JSON.
+Benchmark scores now live in a nested `scores` object. The current feeds no
+longer provide the former end-to-end response-time measurement, so that field
+is null; models with unknown response times pass the chart's time filter.
+
 The Python parser in this project:
 
-- **Extracts** the `rows` array from the RSC stream with a standard JSON decoder
+- **Extracts** complete provider and model arrays through the page manifests,
+  while retaining support for earlier RSC dumps
 - **Deduplicates** ~1,100 host-model pairs down to ~470 unique models. Endpoints with both token prices known and at least one positive price rank first. Among those, it prefers the model creator's endpoint, then the lowest cost per task. The chosen endpoint supplies the provider and prices
 - **Joins** model-level data from the models leaderboard: benchmark scores, cost per task and performance (one value per model variant), plus the family, lab and release date from the site navigation in the same stream
 - **Cleans** the output to only essential fields (pricing, IQ, speed, cost per task, response time, context window)
 - **Outputs** `models.json` — about 450 models with pricing, ready for downstream use
 
-The result is a self-contained Python script with zero dependencies beyond the standard library.
+The Python script uses the [cryptography package] for the public data payloads.
 
 ## Quick start
 
 ### Python
 
 ```bash
+python3 -m pip install -r requirements.txt
 python3 artificialanalysis.ai-parser.py --minimal --pretty
 ```
 
@@ -90,24 +100,29 @@ Each entry:
 
 | Metric | Coverage |
 |---|---|
-| Pricing (input/output) | 100% (445/445) |
-| Intelligence Index | 99% |
+| Pricing (input/output) | 100% (442/442) |
+| Intelligence Index | 25% |
 | Family, lab, release date, effort | 100% |
-| Cost per task | 40% |
-| End-to-end response time | 78% |
-| Speed (tok/s) | 78% |
-| Cache pricing | 68% |
+| Cost per task | 25% |
+| End-to-end response time | 0% (removed upstream) |
+| Speed (tok/s) | 89% |
 
-Artificial Analysis publishes a model-level `cost_per_task` for a subset of models. 164 models have all three plot metrics: intelligence, cost per task, and response time (October 2026).
+Coverage above is from 2026-11-11 and includes deprecated models. Artificial
+Analysis publishes a model-level `cost_per_task` for a subset of models. Models
+without a benchmark score or a positive task cost are excluded from that chart;
+unknown response times remain eligible.
+Only two models currently have both an AIME 2025 score and a positive task cost
+(one is deprecated). The Math chart requires three points and therefore shows
+its insufficient-data explanation; the table can still show individual results.
 
 ## How it works
 
 ```text
 artificialanalysis.ai
   └─ /leaderboards/providers?_rsc=hgvan
-       └─ Next.js RSC stream (~2.5 MB, text/x-component)
-            └─ Contains "rows":[{...}] with ~1,100 entries
-                 └─ Decode the JSON array with json.JSONDecoder().raw_decode
+       └─ Next.js RSC stream (text/x-component)
+            └─ manifest: public /data/<hash>.txt path and decryption key
+                 └─ AES-GCM → gzip → complete JSON array
                       └─ Deduplicate by model slug (prefer the creator's own API)
                            └─ Clean & output models.json
 ```
@@ -116,7 +131,8 @@ The RSC endpoint requires specific headers (`rsc: 1`, `next-router-state-tree`, 
 
 ## Limitations
 
-- **No API key = fragile.** The RSC endpoint is an internal Next.js mechanism. If the site changes its chunk format again, the bracket-counting may need updating.
+- **No API key = fragile.** RSC and its public data manifests are internal site
+  mechanisms. Changes to their paths, decoding or field names may require an update.
 - **Placeholder values.** The RSC stream marks missing values with strings such as `"$undefined"`. The parser turns them into `null`. Some entries hold a reference string instead of a nested object. Deduplication keeps one endpoint per model: priced endpoints beat unpriced ones, then the model creator's own endpoint wins, then the lowest host cost per task (a missing one sorts last). A priced endpoint has two known, finite, nonnegative token prices, with at least one positive. Input-only and output-only charges count. Models without a priced endpoint, including those priced zero at every host, are dropped.
 - **Official API is preferred** for production use. This parser is a workaround for when you don't have (or don't want) an API key. See [artificialanalysis.ai/documentation](https://artificialanalysis.ai/documentation) for the free API tier (1,000 req/day).
 
@@ -136,8 +152,8 @@ uses Intelligence Index task costs. A refresh with no chart-eligible SciCode
 scores fails before replacing `models.json`, preserving the last usable data.
 
 [Terminal-Bench v4.0](https://artificialanalysis.ai/evaluations/terminalbench-v4-0)
-scores are downloadable in the existing models leaderboard RSC feed as
-`terminalbenchV40`. The parser joins by exact model slug and scales fractions to
+scores are downloadable in the models leaderboard data as
+`scores["terminalbench-4-0"]` (formerly `terminalBench40`). The parser joins by exact model slug and scales fractions to
 0–100. Zero is a valid score; missing scores are null and excluded from this
 view. Select it with its tab or `?metric=terminalbench_v4_0`.
 The cost axis still uses Intelligence Index task costs, including any selected
@@ -147,11 +163,14 @@ not a supported CSV export or public API contract.
 
 ### LiveBench coding scores
 
-The parser downloads the official [LiveBench score CSV](https://github.com/LiveBench/new-livebench/blob/main/public/table_2026_06_25.csv)
-and [category map](https://github.com/LiveBench/new-livebench/blob/main/public/categories_2026_06_25.json)
-for release `2026_06_25` from one resolved Git commit. The release date describes
-the benchmark, not the last model addition. Each joined result records that commit
-and its retrieval time in `livebench`, including in `--minimal` output.
+The parser downloads the official [LiveBench score CSV] and [category map]
+for release `2026_06_25` from the site's original benchmark archive. The previous
+`LiveBench/new-livebench` GitHub source returned 404 on 2026-11-11. The release date
+describes the benchmark, not the last model addition. Each joined result records
+the source URLs, retrieval time, CSV SHA-256 and category JSON SHA-256 in
+`livebench`, including in `--minimal` output. Category JSON is hashed after
+serialization with sorted keys and compact separators. `commit` is null for
+archive downloads; historical snapshots with a Git commit remain supported.
 
 Coding averages `code_generation` and `code_completion`. Agentic Coding averages
 `javascript`, `typescript`, and `python`. These scores already use 0–100;
@@ -187,9 +206,12 @@ and metric URLs retain their meanings; older JSON without LiveBench fields
 still works in the page.
 
 To reproduce a snapshot offline, supply all three LiveBench files alongside
-the AA dumps. The metadata JSON contains `release`, the 40-character `commit`,
-and an ISO 8601 `retrieved_at` with timezone. Use the CSV and category files from
-that same commit, retaining the original retrieval time:
+the AA dumps. The metadata JSON contains `release`, an ISO 8601 `retrieved_at`
+with timezone, and either the historical 40-character `commit`, or `commit: null`
+with `source_url`, `categories_url`, `source_sha256` and `categories_sha256`.
+Retain the original files and retrieval time; archive hashes are checked before
+parsing. The raw page's initial arrays omit deprecated models: save the bytes
+returned by `fetch_rsc()` to include the decoded full data for offline replay.
 
 ```bash
 python3 artificialanalysis.ai-parser.py --minimal --pretty \
@@ -221,7 +243,7 @@ The page has no build step and no script dependencies; it loads the DM Sans font
 
 ## Tests
 
-The parser tests in `tests/test_parser.py` need only the Python standard library:
+Install [the parser dependencies] first, then run the parser tests:
 
 ```bash
 python3 -m unittest tests.test_parser -v
@@ -232,17 +254,17 @@ Firefox with [Playwright for Python](https://playwright.dev/python/). The test f
 this folder with `http.server` on a free port. Most tests replace `models.json` with a small
 fixture, so their expected values do not change when the data does; one smoke test loads the
 real `models.json`. Run the parser and browser tests together with a pinned Playwright
-version (the tests were last run with 1.63):
+version (the live-data smoke tests were last run with 1.64):
 
 ```bash
-uv run --with 'playwright~=1.63.0' python3 -m unittest discover -s tests -v
+uv run --with-requirements requirements.txt --with 'playwright~=1.64.0' python3 -m unittest discover -s tests -v
 ```
 
 Pin the Playwright version whose browser builds are installed: an unpinned `--with playwright`
 can pick a release that expects other builds. Without Playwright,
 `python3 -m unittest discover -s tests -v` runs the parser tests and skips the browser tests.
 Only if the matching Chromium and Firefox builds are missing, install them once with
-`uv run --with 'playwright~=1.63.0' playwright install chromium firefox`.
+`uv run --with 'playwright~=1.64.0' playwright install chromium firefox`.
 
 ## Recommended agent skills
 
@@ -262,3 +284,8 @@ GPL-3.0 — Copyright (C) 2026 Anton Maurer
 
 - Original scraping concept by [demianarc/artificialanalysisscrapper](https://github.com/demianarc/artificialanalysisscrapper)
 - Model data source: [artificialanalysis.ai](https://artificialanalysis.ai)
+
+[cryptography package]: https://cryptography.io/
+[LiveBench score CSV]: https://livebench.ai/v1/table_2026_06_25.csv
+[category map]: https://livebench.ai/v1/categories_2026_06_25.json
+[the parser dependencies]: requirements.txt

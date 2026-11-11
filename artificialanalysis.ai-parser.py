@@ -12,15 +12,22 @@ Usage:
 
 import argparse
 import csv
+import gzip
+import hashlib
 import io
 import json
 import math
 import os
 import re
 import sys
+import zlib
 from datetime import datetime, timezone
 from urllib.error import URLError
+from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
+
+from cryptography.exceptions import InvalidTag
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 RSC_URL = "https://artificialanalysis.ai/leaderboards/providers?_rsc=hgvan"
 MODELS_RSC_URL = "https://artificialanalysis.ai/leaderboards/models?_rsc=hgvan"
@@ -44,9 +51,19 @@ MODEL_LEVEL_KEYS = {
     "output_tokens_per_second": "medianOutputTokensPerSecond",
     "time_to_first_token_ms": "medianTimeToFirstTokenSeconds",
 }
+MODEL_LEVEL_ALIASES = {
+    "medianOutputTokensPerSecond": "outputSpeed",
+    "medianTimeToFirstTokenSeconds": "timeToFirstToken",
+}
+SCORE_KEYS = {
+    "scicode": "scicode",
+    "terminalBench40": "terminalbench-4-0",
+    "aime25": "aime-2025",
+}
 
 LIVEBENCH_RELEASE = "2026_06_25"
-LIVEBENCH_ROOT = "https://raw.githubusercontent.com/LiveBench/new-livebench"
+LIVEBENCH_ROOT = "https://livebench.ai/v1"
+LIVEBENCH_LEGACY_ROOT = "https://raw.githubusercontent.com/LiveBench/new-livebench"
 LIVEBENCH_CATEGORIES = {
     "livebench_coding": ("Coding", ["code_generation", "code_completion"]),
     "livebench_agentic_coding": ("Agentic Coding", ["javascript", "typescript", "python"]),
@@ -64,24 +81,29 @@ LIVEBENCH_MODELS = {
 
 
 def fetch_livebench():
-    """Fetch both release files from one commit, without AA's RSC headers."""
+    """Fetch the official v1 archive and fingerprint both source files."""
     def download(url):
         request = Request(url, headers={"User-Agent": "artificialanalysis-ai-parser"})
         with urlopen(request, timeout=60) as response:
             return response.read()
 
-    commit = json.loads(download(
-        "https://api.github.com/repos/LiveBench/new-livebench/commits/main"
-    ))["sha"]
-    if not isinstance(commit, str) or not re.fullmatch(r"[0-9a-f]{40}", commit):
-        raise ValueError("invalid LiveBench commit")
-    base = f"{LIVEBENCH_ROOT}/{commit}/public"
-    raw = download(f"{base}/table_{LIVEBENCH_RELEASE}.csv")
-    categories = json.loads(download(f"{base}/categories_{LIVEBENCH_RELEASE}.json"))
+    source_url = f"{LIVEBENCH_ROOT}/table_{LIVEBENCH_RELEASE}.csv"
+    categories_url = f"{LIVEBENCH_ROOT}/categories_{LIVEBENCH_RELEASE}.json"
+    raw = download(source_url)
+    categories = json.loads(download(categories_url))
     return raw, categories, {
-        "release": LIVEBENCH_RELEASE, "commit": commit,
+        "release": LIVEBENCH_RELEASE, "commit": None,
+        "source_url": source_url, "categories_url": categories_url,
+        "source_sha256": hashlib.sha256(raw).hexdigest(),
+        "categories_sha256": categories_sha256(categories),
         "retrieved_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+def categories_sha256(categories):
+    """Fingerprint category JSON independently of its whitespace and key order."""
+    canonical = json.dumps(categories, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode()).hexdigest()
 
 
 def parse_livebench(raw, categories, provenance):
@@ -89,8 +111,22 @@ def parse_livebench(raw, categories, provenance):
     if not isinstance(provenance, dict) or provenance.get("release") != LIVEBENCH_RELEASE:
         raise ValueError("unexpected LiveBench release")
     commit = provenance.get("commit")
-    if not isinstance(commit, str) or not re.fullmatch(r"[0-9a-f]{40}", commit):
-        raise ValueError("invalid LiveBench commit")
+    if commit is None:
+        source_metadata = {
+            "source_url": f"{LIVEBENCH_ROOT}/table_{LIVEBENCH_RELEASE}.csv",
+            "categories_url": f"{LIVEBENCH_ROOT}/categories_{LIVEBENCH_RELEASE}.json",
+            "source_sha256": hashlib.sha256(raw).hexdigest(),
+            "categories_sha256": categories_sha256(categories),
+        }
+        if any(provenance.get(key) != value for key, value in source_metadata.items()):
+            raise ValueError("invalid LiveBench archive provenance or file hashes")
+    else:
+        if not isinstance(commit, str) or not re.fullmatch(r"[0-9a-f]{40}", commit):
+            raise ValueError("invalid LiveBench commit")
+        source_metadata = {
+            "source_url": (f"{LIVEBENCH_LEGACY_ROOT}/{commit}"
+                           f"/public/table_{LIVEBENCH_RELEASE}.csv"),
+        }
     retrieved_at = provenance.get("retrieved_at")
     if not isinstance(retrieved_at, str) or datetime.fromisoformat(retrieved_at).tzinfo is None:
         raise ValueError("LiveBench retrieval time must include a timezone")
@@ -135,7 +171,7 @@ def parse_livebench(raw, categories, provenance):
             **scores,
             "livebench": {
                 "source_model": source_id, "release": LIVEBENCH_RELEASE,
-                "source_url": f"{LIVEBENCH_ROOT}/{commit}/public/table_{LIVEBENCH_RELEASE}.csv",
+                **source_metadata,
                 "commit": commit, "retrieved_at": retrieved_at,
                 "reasoning_effort": effort, "model_revision": revision,
                 "agent": None, "subtasks": counts,
@@ -148,7 +184,12 @@ def parse_livebench(raw, categories, provenance):
 
 
 def fetch_rsc(url=RSC_URL, timeout=60):
-    """Download an RSC stream from artificialanalysis.ai."""
+    """Download RSC plus its complete leaderboard, including deprecated models.
+
+    Current pages embed only active models. Their public manifest points to
+    AES-GCM encrypted, gzipped JSON. Append the decoded array to the stream so
+    it can also be saved and replayed with the existing offline file inputs.
+    """
     print(f"Downloading RSC data from {url} ...")
     req = Request(url, headers=RSC_HEADERS)
     try:
@@ -158,9 +199,36 @@ def fetch_rsc(url=RSC_URL, timeout=60):
                 return None
             raw = resp.read()
             print(f"Downloaded {len(raw):,} bytes")
-            return raw
-    except URLError as e:
-        print(f"Network error: {e}")
+        text = raw.decode("utf-8", errors="replace")
+        match = re.search(r'"manifest"\s*:\s*', text)
+        if match:
+            manifest, _ = json.JSONDecoder().raw_decode(text, match.end())
+            if not isinstance(manifest, dict):
+                raise ValueError("invalid leaderboard manifest")
+            path = manifest.get("path")
+            if not isinstance(path, str) or not re.fullmatch(r"/data/[\w-]+\.txt", path):
+                raise ValueError("invalid leaderboard manifest path")
+            data_url = "https://artificialanalysis.ai" + path
+            request = Request(data_url, headers={"User-Agent": RSC_HEADERS["user-agent"]})
+            with urlopen(request, timeout=timeout) as response:
+                data = response.read()
+            if manifest.get("key"):
+                key = bytes.fromhex(manifest["key"])
+                nonce = hashlib.sha256(key).digest()[:12]
+                data = gzip.decompress(AESGCM(key).decrypt(nonce, data, None))
+            values = json.loads(data)
+            if not isinstance(values, list) or not values or any(
+                not isinstance(value, dict) for value in values
+            ):
+                raise ValueError("leaderboard manifest must contain a nonempty object array")
+            array_key = ("rows" if urlsplit(url).path == "/leaderboards/providers"
+                         else "models")
+            array_json = json.dumps({array_key: values}, separators=(",", ":"))
+            raw += b"\nparser:" + array_json.encode()
+            print(f"Downloaded full {array_key}: {len(values):,} entries")
+        return raw
+    except (URLError, OSError, ValueError, TypeError, EOFError, zlib.error, InvalidTag) as e:
+        print(f"Error: leaderboard download failed ({type(e).__name__}): {e}")
         return None
 
 
@@ -231,28 +299,17 @@ def extract_rows(raw):
     """Extract the leaderboard "rows" JSON array from the RSC stream.
 
     The RSC stream is text. It contains a large React tree. The tree has
-    a "rows" key. Its value is a JSON array with one entry per host-model
+    a "rows" or "initialRows" key with one entry per host-model
     pair. We decode the JSON directly from that position. The JSON decoder
     finds the end of the array by itself, so brackets inside strings are
     not a problem.
     """
     text = raw.decode("utf-8", errors="replace")
-    idx = text.find('"rows":')
-    if idx < 0:
-        print("Error: 'rows' not found in response")
-        return None
-
-    arr_start = text.find('[', idx)
-    if arr_start < 0 or arr_start - idx > 50:
-        print("Error: could not find array start after 'rows'")
-        return None
-
-    try:
-        rows, _ = json.JSONDecoder().raw_decode(text, arr_start)
-        return rows
-    except json.JSONDecodeError as e:
-        print(f"JSON parse error at position {e.pos}: {e.msg}")
-        return None
+    for key in ("rows", "initialRows"):
+        for rows in json_arrays(text, key):
+            return rows
+    print("Error: 'rows' or 'initialRows' array not found in response")
+    return None
 
 
 def json_arrays(text, key):
@@ -275,8 +332,8 @@ def json_arrays(text, key):
 def extract_model_indexes(raw):
     """Extract model-level data from the models leaderboard by model slug.
 
-    The stream holds two "models" arrays: the site navigation
-    ({slug, name, releaseSlug}) and the leaderboard (scores, model-level
+    The stream holds site navigation ({slug, name, releaseSlug}) in "models"
+    and leaderboard data in "initialModels" or "models" (scores, model-level
     cost per task and performance). Both are merged by slug; a later
     array never erases a valid earlier value. The navigation's "releases"
     array (families, with release date and creator) is attached as
@@ -284,20 +341,23 @@ def extract_model_indexes(raw):
     """
     text = raw.decode("utf-8", errors="replace")
     indexes = {}
-    for models in json_arrays(text, "models"):
+    arrays = (array for key in ("initialModels", "models")
+              for array in json_arrays(text, key))
+    for models in arrays:
         for m in models:
             if not isinstance(m, dict) or not m.get("slug"):
                 continue
             entry = indexes.setdefault(m["slug"], {})
-            for key in ("scicode", "terminalBench40"):
-                score = m.get(key)
+            for key, nested_key in SCORE_KEYS.items():
+                score = dict_or_empty(m.get("scores")).get(nested_key, m.get(key))
                 if type(score) in (int, float) and 0 <= score <= 1:
                     entry[key] = score
             if isinstance(m.get("agenticIndex"), (int, float)):
                 entry["agenticIndex"] = m["agenticIndex"]
             for key in MODEL_LEVEL_KEYS.values():
-                if measurement_or_none(m.get(key)) is not None:
-                    entry[key] = m[key]
+                value = m.get(MODEL_LEVEL_ALIASES.get(key, key), m.get(key))
+                if measurement_or_none(value) is not None:
+                    entry[key] = value
             for key in ("name", "releaseSlug"):
                 if text_or_none(m.get(key)):
                     entry[key] = m[key]
@@ -392,7 +452,7 @@ def clean_model(entry, indexes=None, livebench=None):
     effort, effort_order = parse_effort(model_indexes.get("name") or entry.get("label"), reasoning)
     scicode = model_indexes.get("scicode")
     terminalbench = model_indexes.get("terminalBench40")
-    aime25 = value_or_none(model.get("aime25"))
+    aime25 = model_indexes.get("aime25", value_or_none(model.get("aime25")))
     livebench_scores = (livebench or {}).get(model.get("slug"), {})
 
     return {
@@ -517,6 +577,11 @@ def main():
     # Remove entries without pricing
     models_with_price = [m for m in models if has_paid_prices(m["price_1m_input_tokens"], m["price_1m_output_tokens"])]
     print(f"Models with pricing: {len(models_with_price)}")
+    if models_with_price and not any(
+        m["e2e_response_time_s"] is not None for m in models_with_price
+    ):
+        print("End-to-end response time is unavailable in this feed; "
+              "the chart's response-time filter includes models with unknown times.")
 
     # Preserve the last usable dataset when the score feed or slug join breaks.
     if not any(m["family"] for m in models_with_price):
@@ -529,7 +594,7 @@ def main():
         sys.exit(1)
     if not any("terminalBench40" in m for m in indexes.values()):
         print("Error: no Terminal-Bench v4.0 scores; check the models leaderboard "
-              "download and terminalBench40 field. Output left unchanged.")
+              "download and scores.terminalbench-4-0 field. Output left unchanged.")
         sys.exit(1)
     if not any(
         not m["deprecated"] and m["coding_index"] is not None
