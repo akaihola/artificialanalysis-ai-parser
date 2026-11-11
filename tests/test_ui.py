@@ -315,7 +315,11 @@ class PageTests(unittest.TestCase):
     def test_real_response_time_slider_filters_models(self):
         page = self.open(models=None)
         before = self.points(page)
-        self.set_slider(page, 125)  # 100 seconds
+        position = page.evaluate("""() => {
+          const { state, CONFIG, secondsToSlider } = window.__chart;
+          return secondsToSlider(100, CONFIG.sliderSteps, state.data.timeRange);
+        }""")
+        self.set_slider(page, position)
         self.assertGreater(page.locator("#chart .ghosts circle").count(), 0)
         self.assertLess(len(self.points(page)), len(before))
         self.assertIn("hidden", page.text_content("#time-readout"))
