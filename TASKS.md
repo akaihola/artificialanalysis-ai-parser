@@ -26,9 +26,9 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 ## Completed / Accepted
 
-- [ ] [6] Restore daily model refresh after Artificial Analysis changed its data
+- [x] [6] Restore daily model refresh after Artificial Analysis changed its data
       feeds.
-      <!-- hai:{"id":"simple-962cb77c-7d58-4f25-b0f9-8163a0e4002c","createdAt":"2026-11-11T04:50:42.316Z","updatedAt":"2026-11-11T08:28:05.457Z"} -->
+      <!-- hai:{"id":"simple-962cb77c-7d58-4f25-b0f9-8163a0e4002c","createdAt":"2026-11-11T04:50:42.316Z","updatedAt":"2026-11-11T15:54:43.519Z"} -->
 
 - [ ] [*] Task [4] tried to condense provider and model drop-downs into a good model
   selection UI. It utterly failed, and we lost
