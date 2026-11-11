@@ -67,6 +67,9 @@ verified 2026-11-11, `UV_CONSTRAINT` pins Playwright 1.64 to the installed Nix
 browser builds. Greenlet also needs GCC's `libstdc++.so.6` on `LD_LIBRARY_PATH`.
 The helper handles these and checks the Playwright import explicitly: otherwise
 the browser suite reports skipped tests when a native library is missing.
+The slider's scale depends on the loaded data. For real-data checks, compute
+the position with `secondsToSlider(seconds, CONFIG.sliderSteps, state.data.timeRange)`;
+fixed slider positions are valid only for a fixed fixture. Verified 2026-11-11.
 
 For a refresh-fix PR in this repository, verified 2026-11-11: the GitHub connector
 returned HTTP 403 `Resource not accessible by integration` on PR creation and
@@ -77,3 +80,8 @@ specific to the connector's permissions, not the local GitHub CLI credentials.
 `gh workflow run update-models.yml --ref master` returned the new run's URL.
 An immediately following `gh run list` omitted that run; inspecting the returned
 run ID directly worked. Use that ID rather than dispatching a duplicate run.
+
+A successful refresh run can precede publication. On 2026-11-11 the live page
+still served the previous dataset until its Pages deployment finished. Inspect
+`gh api repos/akaihola/artificialanalysis-ai-parser/pages/builds/latest` for
+`status: built` and the expected commit, then check the published data and UI.

@@ -1,23 +1,32 @@
 # Restore the daily model refresh
 
-Antti and chart readers receive fresh model data again with [the merged fix].
-The parser now reads Artificial Analysis' complete public downloads, including
-deprecated models, and the original LiveBench benchmark from its official archive.
-The previous daily refresh stopped at `rows not found in response`.
+Antti and chart readers receive fresh model data and can filter slow models
+again. The parser reads Artificial Analysis' complete public downloads and the
+original LiveBench benchmark from its official archive. [The response-time
+correction] restores marked 500-token estimates for the Max response time slider.
 
 The refresh fix was merged on 2026-11-11 after Antti authorized publishing it,
 and [the refresh run] passed. Antti then reported that Max response time no
 longer changes the chart: all 94 chart-eligible current models have null timing
 data. Passing the workflow did not establish that this feature still worked.
-The task is reopened. The prepared correction restores a clearly marked
-500-token estimate from current first-answer latency and output speed. Owner:
-Codex in the originating T3 discussion. Next action: publish the correction,
-run the updated GitHub workflow, and verify the slider on the published [chart].
+The correction was merged and published under the existing refresh-fix
+authorization. [The corrected refresh run] and [the Pages deployment] passed.
+The live chart now changes from 29 active variants to 24 at a 100-second limit,
+with five faded dots; removing the limit restores all 29. No implementation or
+deployment work remains. Owner: Antti for acceptance. Next action: open the
+[chart at 100 seconds], check that lowering the limit changes the visible
+variants, and reply `accept refresh repair` in the originating T3 discussion.
+Codex then records acceptance; send any remaining correction in that discussion.
 
 Failure: [daily refresh job], 2026-11-10.
 
 ## Verification on 2026-11-11
 
+- PR #3 merged as `7bde95261d03544189abe520a741c5ec5f889cef`.
+  GitHub ran all 29 parser tests, generated 393 estimates among 442 models,
+  and pushed the refreshed data as `8eb5590`. The Pages deployment for that
+  commit succeeded. Codex moved the actual published slider to a 100-second
+  limit and back, confirming 29 to 24 active variants and five faded dots.
 - The response-time correction passed 29 parser tests and eight Chromium/Firefox
   checks. The refreshed dataset has 393 marked estimates, including 92 of the
   94 current models with an Intelligence score and positive task cost. New
@@ -72,4 +81,8 @@ and existing benchmark meanings and output-preservation checks remain intact.
 [the merged fix]: https://github.com/akaihola/artificialanalysis-ai-parser/pull/2
 [the refresh run]: https://github.com/akaihola/artificialanalysis-ai-parser/actions/runs/42975990794
 [chart]: https://akaihola.github.io/artificialanalysis-ai-parser/intelligence-vs-cost.html
+[chart at 100 seconds]: https://akaihola.github.io/artificialanalysis-ai-parser/intelligence-vs-cost.html?max_response_time=100
+[the response-time correction]: https://github.com/akaihola/artificialanalysis-ai-parser/pull/3
+[the corrected refresh run]: https://github.com/akaihola/artificialanalysis-ai-parser/actions/runs/42986576640
+[the Pages deployment]: https://github.com/akaihola/artificialanalysis-ai-parser/actions/runs/42986609123
 [the project acquisition skill]: ../../.agents/skills/artificial-analysis-data/SKILL.md
