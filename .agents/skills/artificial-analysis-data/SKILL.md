@@ -57,6 +57,11 @@ The helper handles these and checks the Playwright import explicitly: otherwise
 the browser suite reports skipped tests when a native library is missing.
 
 For a refresh-fix PR in this repository, verified 2026-11-11: the GitHub connector
-returned HTTP 403 `Resource not accessible by integration` on PR creation, while
-the existing authenticated `gh pr create --body-file` succeeded. That failure is
+returned HTTP 403 `Resource not accessible by integration` on PR creation and
+merging. The existing authenticated `gh pr create --body-file` and
+`gh pr merge --merge --match-head-commit <sha>` succeeded. Those failures are
 specific to the connector's permissions, not the local GitHub CLI credentials.
+
+`gh workflow run update-models.yml --ref master` returned the new run's URL.
+An immediately following `gh run list` omitted that run; inspecting the returned
+run ID directly worked. Use that ID rather than dispatching a duplicate run.

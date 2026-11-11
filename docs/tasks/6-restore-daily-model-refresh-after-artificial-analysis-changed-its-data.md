@@ -1,19 +1,28 @@
 # Restore the daily model refresh
 
-Antti and chart readers can receive fresh model data again with [the prepared fix].
+Antti and chart readers receive fresh model data again with [the merged fix].
 The parser now reads Artificial Analysis' complete public downloads, including
 deprecated models, and the original LiveBench benchmark from its official archive.
 The previous daily refresh stopped at `rows not found in response`.
 
-Owner: Antti for the publishing decision in this T3 thread; Codex for merging
-and running GitHub Actions after authorization. Next action: review the fix and
-the source limitations below, then authorize merging the pull request. The task
-stays In Progress until the updated workflow succeeds on GitHub.
+The fix was merged and verified on GitHub on 2026-11-11 after Antti authorized
+publishing it. No implementation or deployment work remains. Owner: Antti for
+acceptance. Next action: open [the successful refresh run], confirm the parser
+tests, regeneration and commit steps are green, and reply `accept refresh repair`
+in the T3 discussion that requested the fix. Codex then records acceptance.
+The published [chart] serves the updated code and 442-model dataset.
 
 Failure: [daily refresh job], 2026-11-10.
 
 ## Verification on 2026-11-11
 
+- PR #2 merged as `c8dfb046d05cf3ba5f1b74c835268c35de5418eb`.
+  Codex dispatched [the successful refresh run] against this commit. GitHub
+  installed the dependency, passed all 24 parser tests, downloaded the full
+  provider and model data, and saved 442 priced models. The workflow pushed
+  its data update to master as `f5bb827`.
+- Direct downloads from the published chart confirmed 442 models, the new
+  LiveBench archive provenance, and the updated sparse-result recovery controls.
 - The original refresh command failed locally with the same missing `rows` error.
   The repaired refresh downloaded 1,169 provider rows and 734 complete models,
   then saved 442 priced models, including 272 deprecated models.
@@ -48,5 +57,7 @@ Acceptance: the same refresh command succeeds with live data, parser tests pass,
 and existing benchmark meanings and output-preservation checks remain intact.
 
 [daily refresh job]: https://github.com/akaihola/artificialanalysis-ai-parser/actions/runs/42805407520/job/129793147490
-[the prepared fix]: https://github.com/akaihola/artificialanalysis-ai-parser/pull/2
+[the merged fix]: https://github.com/akaihola/artificialanalysis-ai-parser/pull/2
+[the successful refresh run]: https://github.com/akaihola/artificialanalysis-ai-parser/actions/runs/42975990794
+[chart]: https://akaihola.github.io/artificialanalysis-ai-parser/intelligence-vs-cost.html
 [the project acquisition skill]: ../../.agents/skills/artificial-analysis-data/SKILL.md
