@@ -292,10 +292,37 @@ class PageTests(unittest.TestCase):
             if page.is_hidden("#empty-state"):
                 self.assertGreater(len(self.points(page)), 2, tab)
             else:
-                page.click("#empty-action")
-                self.assertGreater(len(self.points(page)), 0, tab)
+                for _ in range(3):
+                    if page.is_hidden("#empty-state") or page.is_hidden("#empty-action"):
+                        break
+                    page.click("#empty-action")
+                if page.is_hidden("#empty-state"):
+                    self.assertGreater(len(self.points(page)), 0, tab)
+                else:
+                    # A live benchmark can have fewer usable results than the
+                    # chart's three-point minimum, even with every filter lifted.
+                    available, minimum = page.evaluate("""() => {
+                      const { state, buildRows, CONFIG } = window.__chart;
+                      const all = { ...state, selected: [...state.data.families.keys()],
+                        excluded: [], deprecated: true };
+                      return [buildRows(state.data, all).rows.length, CONFIG.minChartPoints];
+                    }""")
+                    self.assertLess(available, minimum, tab)
+                    self.assertIn(f"needs at least {minimum}", page.text_content("#empty-text"))
         page.click("#table-button")
         self.assertGreater(page.locator("#data-table tbody tr").count(), 2)
+
+    def test_sparse_current_results_offer_deprecated_families(self):
+        models = [{**m, "deprecated": True} if m["family"] in
+                  {"deepseek-v4-pro", "kimi-k3"} else m for m in MODELS]
+        page = self.open("?metric=livebench_coding", models=models)
+        self.assertTrue(page.is_visible("#empty-state"))
+        page.click("#empty-action:text-is('Show deprecated')")
+        page.click("#empty-action:text-is('Show models with LiveBench Coding data')")
+        self.assertTrue(page.is_hidden("#empty-state"))
+        self.assertEqual(self.points(page), {
+            "gpt-6-astra-medium", "gpt-6-astra", "deepseek-v4-pro", "kimi-k3",
+        })
 
     def test_desktop_layout_fits_the_window(self):
         for viewport in ({"width": 901, "height": 700}, {"width": 1024, "height": 768},

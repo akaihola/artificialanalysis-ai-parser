@@ -1,0 +1,275 @@
+{
+  "source": "Artificial Analysis full leaderboard manifests, fetched 2026-11-11 UTC",
+  "rows": [
+    {
+      "id": "c9cbf21c-31b5-4147-a69f-a8a1d617b258",
+      "label": "GLM-4.5V (non-reasoning)",
+      "hostApiId": "zai-org/glm-4.5v",
+      "footnotes": null,
+      "host": {
+        "name": "Novita",
+        "slug": "novita",
+        "logo": "novita.svg",
+        "color": "#5348EC",
+        "functionCallingUrl": "https://novita.ai/docs/guides/llm-function-calling#function-calling",
+        "jsonModeUrl": "https://novita.ai/docs/guides/llm-structured-outputs"
+      },
+      "model": {
+        "slug": "glm-4-5v",
+        "isOpenWeights": true,
+        "deprecated": true,
+        "reasoningModel": false,
+        "intelligenceIndex": null,
+        "omniscience": null,
+        "scores": {
+          "mmmu-pro": 0.427745664739884,
+          "humanitys-last-exam": 0.0347544022242817,
+          "artificial-analysis-long-context-reasoning": 0,
+          "critpt": 0,
+          "terminalbench-hard": 0.0681818181818182,
+          "tau2-bench": 0.195906432748538,
+          "gpqa-diamond": 0.572727272727273,
+          "ifbench": 0.286394557823129,
+          "livecodebench": 0.352380952380952,
+          "aime-2025": 0.153333333333333
+        },
+        "sizeClass": "medium",
+        "creator": {
+          "name": "Z AI",
+          "logo": "zai.svg"
+        }
+      },
+      "features": {
+        "contextWindowTokens": 65536,
+        "functionCalling": true,
+        "jsonMode": true,
+        "openaiCompatible": true
+      },
+      "pricing": {
+        "priceClass": "medium",
+        "price1mInputTokens": 0.6,
+        "price1mOutputTokens": 1.8,
+        "cacheHitPrice": 0.11,
+        "cacheWritePrice": null
+      },
+      "performance": {
+        "outputSpeed": 48.71878408362293,
+        "timeToFirstToken": 4.869791383896811,
+        "timeToFirstAnswerToken": 4.869791383896811,
+        "endpointErrorRate": 0
+      }
+    },
+    {
+      "id": "74624b8d-abbb-471a-a535-b9dcfe4d41e9",
+      "label": "GPT-6 Astra (max)",
+      "hostApiId": "gpt-6-astra",
+      "footnotes": null,
+      "host": {
+        "name": "OpenAI",
+        "slug": "openai",
+        "logo": "openai.svg",
+        "color": "#1f1f1f",
+        "functionCallingUrl": "https://platform.openai.com/docs/guides/function-calling",
+        "jsonModeUrl": "https://platform.openai.com/docs/guides/text-generation/json-mode"
+      },
+      "model": {
+        "slug": "gpt-6-astra",
+        "isOpenWeights": false,
+        "deprecated": false,
+        "reasoningModel": true,
+        "intelligenceIndex": 56.8538559596797,
+        "omniscience": 42.43333333333333,
+        "scores": {
+          "aa-briefcase": 1568.92,
+          "omniscience-accuracy": 0.6156666666666667,
+          "omniscience-non-hallucination": 0.5021682567215958,
+          "automationbench-aa": 0.6849174806688876,
+          "terminal-bench-science": 0.633333333333333,
+          "frontiercode-2-0": 0.42374797979798,
+          "hle-diamond": 0.638,
+          "gdp-pdf": 0.31,
+          "terminalbench-4-0": 0.590909090909091,
+          "critpt-v2-hard": 0.705,
+          "aa-analyst-agent": 0.5125,
+          "harvey-lab-aa": 0.0861111111111111,
+          "gdpval-aa-normalized": 1586.3,
+          "aa-3d": 1168.398,
+          "code2video-aa": 1426.78,
+          "itbench-aa": 0.485875706214689,
+          "mlcr-aa": 0.416666666666667,
+          "mmmu-pro": 0.86878612716763,
+          "frontiercode": 0.469827666666667,
+          "healthbench": 0.5822174183894343,
+          "healthbench-professional": 0.6597887253032397,
+          "vials-aa": 0.6273291925465838,
+          "mka": 0.5024483143341066,
+          "humanitys-last-exam": 0.546802594995366,
+          "artificial-analysis-long-context-reasoning": 0.806666666666667,
+          "scicode": 0.564814814814815,
+          "critpt": 0.317142857142857,
+          "terminalbench-2-1": 0.883895131086142,
+          "gpqa-diamond": 0.960606060606061,
+          "tau3-banking": 0.414432989690722
+        },
+        "sizeClass": "large",
+        "creator": {
+          "name": "OpenAI",
+          "logo": "openai.svg"
+        }
+      },
+      "features": {
+        "contextWindowTokens": 1000000,
+        "functionCalling": true,
+        "jsonMode": true,
+        "openaiCompatible": true
+      },
+      "pricing": {
+        "costPerTask": 6.244666943602518,
+        "priceClass": "high",
+        "price1mInputTokens": 10,
+        "price1mOutputTokens": 50,
+        "cacheHitPrice": 1,
+        "cacheWritePrice": 12.5
+      },
+      "performance": {
+        "outputSpeed": 37.62803838517589,
+        "timeToFirstToken": 246.03122102110785,
+        "timeToFirstAnswerToken": 246.03122102110785,
+        "endpointErrorRate": 0.04225352112676056,
+        "intelligenceIndexTimePerTask": 1381.2359401895656
+      }
+    }
+  ],
+  "models": [
+    {
+      "slug": "glm-4-5v",
+      "name": "GLM-4.5V (Non-reasoning)",
+      "shortName": "GLM-4.5V (non-reasoning)",
+      "deprecated": true,
+      "isReasoning": false,
+      "isOpenWeights": true,
+      "paramClass": "medium",
+      "priceClass": "medium",
+      "modelCreatorName": "Z AI",
+      "modelCreatorColor": "#1c7ff8",
+      "modelCreatorLogo": "/img/logos/zai.svg",
+      "contextWindowTokens": 64000,
+      "intelligenceIndex": null,
+      "omniscience": null,
+      "scores": {
+        "mmmu-pro": 0.427745664739884,
+        "humanitys-last-exam": 0.0347544022242817,
+        "artificial-analysis-long-context-reasoning": 0,
+        "critpt": 0,
+        "terminalbench-hard": 0.0681818181818182,
+        "tau2-bench": 0.195906432748538,
+        "gpqa-diamond": 0.572727272727273,
+        "ifbench": 0.286394557823129,
+        "livecodebench": 0.352380952380952,
+        "aime-2025": 0.153333333333333
+      },
+      "price1mInputTokens": 0.6,
+      "price1mOutputTokens": 1.8,
+      "cacheHitPrice": 0.11,
+      "cacheWritePrice": null,
+      "outputSpeed": 48.71878408362293,
+      "timeToFirstToken": 4.869791383896811,
+      "timeToFirstAnswerToken": 4.869791383896811
+    },
+    {
+      "slug": "gpt-6-astra",
+      "name": "GPT-6 Astra (Max)",
+      "shortName": "GPT-6 Astra (max)",
+      "deprecated": false,
+      "isReasoning": true,
+      "isOpenWeights": false,
+      "paramClass": null,
+      "priceClass": "high",
+      "modelCreatorName": "OpenAI",
+      "modelCreatorColor": "#1f1f1f",
+      "modelCreatorLogo": "/img/logos/openai.svg",
+      "contextWindowTokens": 1000000,
+      "intelligenceIndex": 56.8538559596797,
+      "omniscience": 42.43333333333333,
+      "scores": {
+        "aa-briefcase": 1568.92,
+        "omniscience-accuracy": 0.6156666666666667,
+        "omniscience-non-hallucination": 0.5021682567215958,
+        "automationbench-aa": 0.6849174806688876,
+        "terminal-bench-science": 0.633333333333333,
+        "frontiercode-2-0": 0.42374797979798,
+        "hle-diamond": 0.638,
+        "gdp-pdf": 0.31,
+        "terminalbench-4-0": 0.590909090909091,
+        "critpt-v2-hard": 0.705,
+        "aa-analyst-agent": 0.5125,
+        "harvey-lab-aa": 0.0861111111111111,
+        "gdpval-aa-normalized": 1586.3,
+        "aa-3d": 1168.398,
+        "code2video-aa": 1426.78,
+        "itbench-aa": 0.485875706214689,
+        "mlcr-aa": 0.416666666666667,
+        "mmmu-pro": 0.86878612716763,
+        "frontiercode": 0.469827666666667,
+        "healthbench": 0.5822174183894343,
+        "healthbench-professional": 0.6597887253032397,
+        "vials-aa": 0.6273291925465838,
+        "mka": 0.5024483143341066,
+        "humanitys-last-exam": 0.546802594995366,
+        "artificial-analysis-long-context-reasoning": 0.806666666666667,
+        "scicode": 0.564814814814815,
+        "critpt": 0.317142857142857,
+        "terminalbench-2-1": 0.883895131086142,
+        "gpqa-diamond": 0.960606060606061,
+        "tau3-banking": 0.414432989690722
+      },
+      "intelligenceIndexCostPerTask": 6.244666943602518,
+      "intelligenceIndexTimePerTask": 1381.2359401895656,
+      "price1mInputTokens": 10,
+      "price1mOutputTokens": 50,
+      "cacheHitPrice": 1,
+      "cacheWritePrice": 12.5,
+      "outputSpeed": 37.62803838517589,
+      "timeToFirstToken": 246.03122102110785,
+      "timeToFirstAnswerToken": 246.03122102110785
+    }
+  ],
+  "modelsAndReleases": {
+    "models": [
+      {
+        "slug": "gpt-6-astra",
+        "name": "GPT-6 Astra (Max)",
+        "releaseSlug": "gpt-6-astra"
+      },
+      {
+        "slug": "glm-4-5v",
+        "name": "GLM-4.5V (Non-reasoning)",
+        "releaseSlug": "glm-4-5v"
+      }
+    ],
+    "releases": [
+      {
+        "slug": "gpt-6-astra",
+        "name": "GPT-6 Astra",
+        "deprecated": false,
+        "releaseDate": "2026-09-03",
+        "creator": {
+          "slug": "openai",
+          "name": "OpenAI",
+          "logo": "/img/logos/openai.svg"
+        }
+      },
+      {
+        "slug": "glm-4-5v",
+        "name": "GLM-4.5V",
+        "deprecated": true,
+        "releaseDate": "2025-08-11",
+        "creator": {
+          "slug": "zai",
+          "name": "Z AI",
+          "logo": "/img/logos/zai.svg"
+        }
+      }
+    ]
+  }
+}

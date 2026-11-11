@@ -2,6 +2,8 @@
 
 Rules for TASKS.md usage are at the bottom of the file.
 
+## Unverified proposals
+
 ## Ordered backlog
 
 - [*] Fix the scraper's first-party host matching: "Alibaba" vs "Alibaba Cloud", "Z AI"
@@ -21,6 +23,10 @@ Rules for TASKS.md usage are at the bottom of the file.
   URL as well, preferably in a condensed value.
 
 ## In Progress
+
+- [~] [6] Restore daily model refresh after Artificial Analysis changed its data
+      feeds.
+      <!-- hai:{"id":"simple-962cb77c-7d58-4f25-b0f9-8163a0e4002c","createdAt":"2026-11-11T04:50:42.316Z","updatedAt":"2026-11-11T04:50:42.316Z"} -->
 
 ## Completed / Accepted
 
@@ -50,7 +56,6 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 - [ ] [*] Add Pareto chart Y-axis zoom
 
-
 - [x] [4] Condense provider/model selection into drop-down menus.
 
 - [x] [5] Rebuild the cost vs intelligence chart in the style of slopalytics.com, keeping
@@ -64,6 +69,10 @@ Rules for TASKS.md usage are at the bottom of the file.
 [*]: TASKS.md
 
 ---
+
+[6]: docs/tasks/6-restore-daily-model-refresh-after-artificial-analysis-changed-its-data.md
+
+<!-- hai:reserved-numbers:1,2,3,4,5,6 -->
 
 ## Rules
 
