@@ -1,6 +1,6 @@
 # Restore the daily model refresh
 
-Antti and chart readers can receive fresh model data again with the prepared fix.
+Antti and chart readers can receive fresh model data again with [the prepared fix].
 The parser now reads Artificial Analysis' complete public downloads, including
 deprecated models, and the original LiveBench benchmark from its official archive.
 The previous daily refresh stopped at `rows not found in response`.
@@ -48,4 +48,5 @@ Acceptance: the same refresh command succeeds with live data, parser tests pass,
 and existing benchmark meanings and output-preservation checks remain intact.
 
 [daily refresh job]: https://github.com/akaihola/artificialanalysis-ai-parser/actions/runs/42805407520/job/129793147490
+[the prepared fix]: https://github.com/akaihola/artificialanalysis-ai-parser/pull/2
 [the project acquisition skill]: ../../.agents/skills/artificial-analysis-data/SKILL.md

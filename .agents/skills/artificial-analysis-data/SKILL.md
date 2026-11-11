@@ -55,3 +55,8 @@ verified 2026-11-11, `UV_CONSTRAINT` pins Playwright 1.64 to the installed Nix
 browser builds. Greenlet also needs GCC's `libstdc++.so.6` on `LD_LIBRARY_PATH`.
 The helper handles these and checks the Playwright import explicitly: otherwise
 the browser suite reports skipped tests when a native library is missing.
+
+For a refresh-fix PR in this repository, verified 2026-11-11: the GitHub connector
+returned HTTP 403 `Resource not accessible by integration` on PR creation, while
+the existing authenticated `gh pr create --body-file` succeeded. That failure is
+specific to the connector's permissions, not the local GitHub CLI credentials.
