@@ -17,8 +17,11 @@ and `initialModels`. The parser follows each page's public data manifest to get
 the complete leaderboard, including deprecated models. It decrypts the AES-GCM
 payload using the key published in that page, then decompresses its gzip JSON.
 Benchmark scores now live in a nested `scores` object. The current feeds no
-longer provide the former end-to-end response-time measurement, so that field
-is null; models with unknown response times pass the chart's time filter.
+longer provide the former end-to-end response-time measurement. The parser
+instead estimates a 500-token response as time to the first answer token,
+including thinking, plus `500 / outputSpeed`. Estimates are marked `≈` in the
+chart details and table. Historical reported totals retain precedence. Models
+missing either timing component remain unknown and pass the chart's time filter.
 
 The Python parser in this project:
 
@@ -91,7 +94,8 @@ Each entry:
 | `context_window_tokens` | Context window size |
 | `output_tokens_per_second` | Generation speed, model-level |
 | `time_to_first_token_ms` | Latency to first token, model-level |
-| `e2e_response_time_s` | Median end-to-end response time, model-level. Total seconds for a 500-token answer, with thinking time |
+| `e2e_response_time_s` | Model-level reported total, or estimated seconds for a 500-token answer including thinking time |
+| `e2e_response_time_estimated` | True when derived from first-answer latency and output speed; false for reported or unavailable values |
 | `reasoning` | Whether it's a reasoning model |
 | `open_weights` | Whether weights are open |
 | `deprecated` | Whether Artificial Analysis marks the model as deprecated |
@@ -104,7 +108,7 @@ Each entry:
 | Intelligence Index | 25% |
 | Family, lab, release date, effort | 100% |
 | Cost per task | 25% |
-| End-to-end response time | 0% (removed upstream) |
+| End-to-end response time | 89% (393/442, estimated) |
 | Speed (tok/s) | 89% |
 
 Coverage above is from 2026-11-11 and includes deprecated models. Artificial
@@ -184,7 +188,7 @@ Select `?metric=livebench_coding` or `?metric=livebench_agentic_coding`, or use
 the tabs. Both views use the same model selection, Pareto calculation, and
 response-time filter. Their cost axis is the AA
 Intelligence Index task cost with the selected subscription adjustment, and
-the response time is AA's measurement. Neither measures LiveBench evaluation
+the response time uses AA's timing data for a 500-token estimate. Neither measures LiveBench evaluation
 cost or duration.
 
 The initial explicit mapping covers GPT-6 Astra max, GPT-5.6 Sol/Terra/Luna max,
@@ -226,6 +230,15 @@ category definitions; their metadata records the source commit and retrieval.
 The parser tests use them (see [Tests](#tests)).
 
 Besides the benchmark tabs, the plan selectors, Show deprecated and Zoom Y to Pareto, the page adds a filter that slopalytics does not have: **maximum end-to-end response time**. Reasoning models can think for minutes before they answer. Move the slider to fade out models that are slower than your limit. The page then computes the Pareto line again from the models that remain. This shows you the best value models that are also fast enough for your use case.
+
+Current response times use model-level `timeToFirstAnswerToken + 500 / outputSpeed`.
+Time to the first answer includes thinking; ordinary time to the first token can
+exclude it and is not used as a replacement. The estimate represents a fixed
+500-token answer rather than an Intelligence Index task. It is not the former
+reported median: current source timing aggregates can differ from historical
+measurements. The `≈` marker identifies this distinction. A refresh with no
+usable timings among current models with an Intelligence score and positive
+task cost fails before replacing the dataset.
 
 To use the page:
 

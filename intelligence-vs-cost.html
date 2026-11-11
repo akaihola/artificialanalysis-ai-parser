@@ -577,7 +577,7 @@
           </ul>
           <p>Only models with a score for the picked benchmark appear. Whatever the benchmark, the
             cost axis uses the Intelligence Index task costs and the response time filter uses the
-            Artificial Analysis response times.</p>
+            Artificial Analysis timing data for a 500-token answer.</p>
           <p>Deprecated models are hidden unless <strong>Show deprecated</strong> is on, so some
             benchmarks, such as Math (AIME 2025), show only a few points by default.</p>
 
@@ -590,10 +590,12 @@
 
           <h3>Max response time</h3>
           <p>Reasoning models can think for minutes before they answer. The slider hides variants
-            whose median end-to-end response time is above the limit. That is the time from the
+            whose end-to-end response time is above the limit. That is the time from the
             request to the last token of a 500-token answer. Hidden variants stay on the chart as
             faint dots, and the Pareto line is computed again from the variants that remain.
-            Variants with no measured response time are never hidden.</p>
+            Values marked ≈ are estimates: time to the first answer token, including thinking,
+            plus the time to generate 500 tokens at the reported output speed.
+            Variants with no response-time data are never hidden.</p>
         </div>
       </div>
       <div class="popover-anchor desktop-only" id="settings-anchor">
@@ -927,6 +929,9 @@ function fmtScore(v) {
 function fmtSeconds(v) {
   return v == null ? "—" : v.toFixed(v < 10 ? 1 : 0) + " s";
 }
+function fmtResponseTime(v) {
+  return (v.time != null && v.timeEstimated ? "≈ " : "") + fmtSeconds(v.time);
+}
 function fmtSpeed(v) {
   return v == null ? "—" : Math.round(v) + " tok/s";
 }
@@ -970,6 +975,7 @@ function normalise(models) {
       open: !!m.open_weights,
       cost: m.cost_per_task,
       time: numberOrNull(m.e2e_response_time_s),
+      timeEstimated: m.e2e_response_time_estimated === true,
       speed: numberOrNull(m.output_tokens_per_second),
       scores,
       livebench: m.livebench || null,
@@ -1883,7 +1889,7 @@ function renderTable() {
       `<small>${esc(labDisplayName(v.lab, v.labName))}</small></th>` +
       `<td class="effort">${esc(v.effortLabel)}</td>${scores}` +
       `<td class="num">${fmtCost(r.x)}${plan ? `<small>API ${fmtCost(v.cost)}</small>` : ""}</td>` +
-      `<td class="num">${fmtSeconds(v.time)}</td><td>${r.pareto ? "Yes" : ""}</td></tr>`;
+      `<td class="num">${fmtResponseTime(v)}</td><td>${r.pareto ? "Yes" : ""}</td></tr>`;
   }).join("");
   setHTML(els.dataTable, head + `<tbody>${body}</tbody>`);
 }
@@ -2021,7 +2027,8 @@ function tooltipRows(r, withApi = false) {
   rows.push({ key: "cost", label: plan ? `Cost per task (${plan.fullName})` : "Cost per task", value: r.x, text: fmtCost(r.x),
     wide: !!plan });
   if (plan || withApi) rows.push({ key: "api", label: "API cost per task", value: v.cost, text: fmtCost(v.cost) });
-  rows.push({ key: "time", label: "Response time", value: v.time, text: fmtSeconds(v.time) });
+  rows.push({ key: "time", label: "Response time", value: v.time, text: fmtResponseTime(v),
+    note: v.timeEstimated ? "500-token estimate, including thinking time" : "" });
   rows.push({ key: "speed", label: "Output speed", value: v.speed, text: fmtSpeed(v.speed) });
   return rows;
 }

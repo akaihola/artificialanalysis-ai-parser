@@ -55,7 +55,8 @@ def nav(slug="test"):
 def scores(slug="test", **fields):
     """Models leaderboard stream for one slug with a model-level cost."""
     return nav(slug) + b"\n" + stream("models", [
-        {"slug": slug, "intelligenceIndexCostPerTask": 0.25, **fields}])
+        {"slug": slug, "intelligenceIndexCostPerTask": 0.25,
+         "medianEndToEndResponseTimeSeconds": 60, **fields}])
 
 
 class Download(io.BytesIO):
@@ -63,6 +64,75 @@ class Download(io.BytesIO):
 
 
 class ParserTests(unittest.TestCase):
+    def test_response_time_estimate_includes_thinking(self):
+        raw = scores(outputSpeed=100, timeToFirstToken=1,
+                     timeToFirstAnswerToken=90, intelligenceIndexTimePerTask=999,
+                     medianEndToEndResponseTimeSeconds=None)
+        model = parser.clean_model(ROW, parser.extract_model_indexes(raw))
+        self.assertEqual(model["e2e_response_time_s"], 95)
+        self.assertTrue(model["e2e_response_time_estimated"])
+        # A provider row's latency must not replace model-level timing.
+        row = copy.deepcopy(ROW)
+        row["performance"] = {"timeToFirstAnswerToken": 2, "outputSpeed": 500}
+        model = parser.clean_model(row, parser.extract_model_indexes(raw))
+        self.assertEqual(model["e2e_response_time_s"], 95)
+
+    def test_response_time_estimate_requires_valid_components(self):
+        for field in ("timeToFirstAnswerToken", "outputSpeed"):
+            for invalid in [None, "$undefined", True, "100", -1,
+                            float("nan"), float("inf")]:
+                with self.subTest(field=field, invalid=invalid):
+                    fields = {"timeToFirstAnswerToken": 90, "outputSpeed": 100,
+                              "timeToFirstToken": 1,
+                              "medianEndToEndResponseTimeSeconds": None, field: invalid}
+                    model = parser.clean_model(
+                        ROW, parser.extract_model_indexes(scores(**fields)))
+                    self.assertIsNone(model["e2e_response_time_s"])
+        raw = scores(outputSpeed=0, timeToFirstAnswerToken=90,
+                     medianEndToEndResponseTimeSeconds=None)
+        self.assertIsNone(parser.clean_model(ROW, parser.extract_model_indexes(raw))
+                          ["e2e_response_time_s"])
+        raw = scores(outputSpeed=100, timeToFirstAnswerToken=0,
+                     medianEndToEndResponseTimeSeconds=None)
+        self.assertEqual(parser.clean_model(ROW, parser.extract_model_indexes(raw))
+                         ["e2e_response_time_s"], 5)
+
+    def test_reported_response_time_precedes_estimate(self):
+        for reported in [0, 120]:
+            with self.subTest(reported=reported):
+                raw = scores(outputSpeed=100, timeToFirstAnswerToken=90,
+                             medianEndToEndResponseTimeSeconds=reported)
+                model = parser.clean_model(ROW, parser.extract_model_indexes(raw))
+                self.assertEqual(model["e2e_response_time_s"], reported)
+                self.assertFalse(model["e2e_response_time_estimated"])
+
+    def test_no_eligible_response_times_preserves_output(self):
+        for deprecated, intelligence, cost in [
+            (True, 42, 0.25), (False, None, 0.25), (False, 42, None),
+        ]:
+            with self.subTest(deprecated=deprecated, intelligence=intelligence, cost=cost):
+                other = copy.deepcopy(ROW)
+                other["model"].update(slug="other", deprecated=deprecated,
+                                      intelligenceIndex=intelligence)
+                raw = scores(scicode=0.5, terminalBench40=0.5,
+                             medianEndToEndResponseTimeSeconds=None)
+                raw += b"\n" + stream("models", [{
+                    "slug": "other", "medianEndToEndResponseTimeSeconds": 30,
+                    "intelligenceIndexCostPerTask": cost,
+                }])
+                with tempfile.TemporaryDirectory() as directory:
+                    with self.assertRaises(SystemExit):
+                        self.run_main(directory, stream("rows", [ROW, other]), raw)
+                    self.assertEqual((Path(directory) / "output.json").read_bytes(),
+                                     b"previous dataset\n")
+
+    def test_missing_first_answer_never_uses_first_token(self):
+        raw = scores(outputSpeed=100, timeToFirstToken=1,
+                     medianEndToEndResponseTimeSeconds=None)
+        model = parser.clean_model(ROW, parser.extract_model_indexes(raw))
+        self.assertIsNone(model["e2e_response_time_s"])
+        self.assertFalse(model["e2e_response_time_estimated"])
+
     def test_current_leaderboard_schema(self):
         fixture = json.loads(
             (FIXTURES / "aa-leaderboards-2026-11-11.json").read_text()
@@ -90,7 +160,11 @@ class ParserTests(unittest.TestCase):
                 model["time_to_first_token_ms"],
                 round(source["timeToFirstToken"] * 1000, 1),
             )
-            self.assertIsNone(model["e2e_response_time_s"])
+            self.assertEqual(
+                model["e2e_response_time_s"],
+                round(source["timeToFirstAnswerToken"] + 500 / source["outputSpeed"], 2),
+            )
+            self.assertTrue(model["e2e_response_time_estimated"])
         self.assertEqual(
             by_slug["glm-4-5v"]["math_index"],
             next(m for m in fixture["models"] if m["slug"] == "glm-4-5v")
@@ -500,12 +574,12 @@ class ParserTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             parser.parse_livebench(LIVEBENCH_INPUT[0], {"Coding": []}, LIVEBENCH_INPUT[2])
 
-    def test_livebench_full_minimal_and_no_response_time(self):
+    def test_livebench_full_minimal_output(self):
         for minimal in [False, True]:
             with self.subTest(minimal=minimal), tempfile.TemporaryDirectory() as directory:
                 data = self.run_main(directory, stream("rows", [ROW]),
                                      scores(scicode=0.5, terminalBench40=0.5), minimal)
-                self.assertIsNone(data[0]["e2e_response_time_s"])
+                self.assertEqual(data[0]["e2e_response_time_s"], 60)
                 self.assertGreater(data[0]["livebench_coding"], 0)
                 meta = data[0]["livebench"]
                 self.assertEqual(meta["source_model"], "gpt-6-astra-max")

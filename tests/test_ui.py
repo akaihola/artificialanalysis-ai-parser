@@ -312,6 +312,29 @@ class PageTests(unittest.TestCase):
         page.click("#table-button")
         self.assertGreater(page.locator("#data-table tbody tr").count(), 2)
 
+    def test_real_response_time_slider_filters_models(self):
+        page = self.open(models=None)
+        before = self.points(page)
+        self.set_slider(page, 125)  # 100 seconds
+        self.assertGreater(page.locator("#chart .ghosts circle").count(), 0)
+        self.assertLess(len(self.points(page)), len(before))
+        self.assertIn("hidden", page.text_content("#time-readout"))
+        page.click("#table-button")
+        self.assertIn("hidden by the response time limit", page.text_content("#table-caption"))
+        self.set_slider(page, 200)
+        page.click("#table-button")
+        self.assertEqual(self.points(page), before)
+
+    def test_response_time_estimate_is_identified(self):
+        models = [{**m, "e2e_response_time_estimated": True} for m in MODELS]
+        page = self.open(models=models)
+        page.hover('#chart [data-id="claude-opus-5-5"]')
+        row = next(r for r in self.tooltip_rows(page) if r[0] == "Response time")
+        self.assertTrue(row[1].startswith("≈ "))
+        self.assertIn("500-token", row[2])
+        page.click("#table-button")
+        self.assertIn("≈", page.text_content("#data-table"))
+
     def test_sparse_current_results_offer_deprecated_families(self):
         models = [{**m, "deprecated": True} if m["family"] in
                   {"deepseek-v4-pro", "kimi-k3"} else m for m in MODELS]

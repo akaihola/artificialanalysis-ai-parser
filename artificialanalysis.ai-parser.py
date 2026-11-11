@@ -354,7 +354,7 @@ def extract_model_indexes(raw):
                     entry[key] = score
             if isinstance(m.get("agenticIndex"), (int, float)):
                 entry["agenticIndex"] = m["agenticIndex"]
-            for key in MODEL_LEVEL_KEYS.values():
+            for key in (*MODEL_LEVEL_KEYS.values(), "timeToFirstAnswerToken"):
                 value = m.get(MODEL_LEVEL_ALIASES.get(key, key), m.get(key))
                 if measurement_or_none(value) is not None:
                     entry[key] = value
@@ -416,6 +416,23 @@ def deduplicate_models(entries):
     return result
 
 
+def response_time(indexes):
+    """Return reported seconds or a 500-token estimate, plus its estimate flag.
+
+    Time to first answer token includes reasoning time; time to first token
+    can exclude it. Both inputs come from the same model-level leaderboard.
+    """
+    reported = measurement_or_none(indexes.get("medianEndToEndResponseTimeSeconds"))
+    if reported is not None:
+        return reported, False
+    first_answer = measurement_or_none(indexes.get("timeToFirstAnswerToken"))
+    speed = measurement_or_none(indexes.get("medianOutputTokensPerSecond"))
+    if first_answer is None or speed is None or speed <= 0:
+        return None, False
+    estimate = first_answer + 500 / speed
+    return (estimate, True) if math.isfinite(estimate) else (None, False)
+
+
 def clean_model(entry, indexes=None, livebench=None):
     """Extract clean model data from a raw entry.
 
@@ -444,7 +461,8 @@ def clean_model(entry, indexes=None, livebench=None):
     model_indexes = (indexes or {}).get(model.get("slug"), {})
     # Cost and performance are AA's model-level values, not the host row's.
     perf = {field: model_indexes.get(key) for field, key in MODEL_LEVEL_KEYS.items()}
-    ttft_s, e2e_s = perf["time_to_first_token_ms"], perf["e2e_response_time_s"]
+    ttft_s = perf["time_to_first_token_ms"]
+    e2e_s, e2e_estimated = response_time(model_indexes)
     release = dict_or_empty(model_indexes.get("release"))
     lab = dict_or_empty(release.get("creator"))
     released = text_or_none(release.get("releaseDate"))
@@ -483,7 +501,8 @@ def clean_model(entry, indexes=None, livebench=None):
         "context_window_tokens": value_or_none(features.get("contextWindowTokens")),
         "output_tokens_per_second": perf["output_tokens_per_second"],
         "time_to_first_token_ms": round(ttft_s * 1000, 1) if ttft_s else None,
-        "e2e_response_time_s": round(e2e_s, 2) if e2e_s else None,
+        "e2e_response_time_s": round(e2e_s, 2) if e2e_s is not None else None,
+        "e2e_response_time_estimated": e2e_estimated,
         "reasoning": reasoning,
         "open_weights": model.get("isOpenWeights", False),
         "deprecated": model.get("deprecated", False),
@@ -502,6 +521,7 @@ def compress_for_calculator(models):
         "price_1m_input_tokens", "price_1m_output_tokens", "price_1m_cache_hit",
         "blended_price_3_1", "context_window_tokens",
         "output_tokens_per_second", "time_to_first_token_ms", "e2e_response_time_s",
+        "e2e_response_time_estimated",
         "reasoning", "open_weights", "deprecated",
         "livebench_coding", "livebench_agentic_coding", "livebench",
     ]
@@ -577,11 +597,9 @@ def main():
     # Remove entries without pricing
     models_with_price = [m for m in models if has_paid_prices(m["price_1m_input_tokens"], m["price_1m_output_tokens"])]
     print(f"Models with pricing: {len(models_with_price)}")
-    if models_with_price and not any(
-        m["e2e_response_time_s"] is not None for m in models_with_price
-    ):
-        print("End-to-end response time is unavailable in this feed; "
-              "the chart's response-time filter includes models with unknown times.")
+    timed = sum(m["e2e_response_time_s"] is not None for m in models_with_price)
+    print(f"Models with response times: {timed} "
+          f"({sum(m['e2e_response_time_estimated'] for m in models_with_price)} estimated)")
 
     # Preserve the last usable dataset when the score feed or slug join breaks.
     if not any(m["family"] for m in models_with_price):
@@ -591,6 +609,16 @@ def main():
     if not any(m["cost_per_task"] for m in models_with_price):
         print("Error: no model-level cost per task; check the models leaderboard "
               "download and intelligenceIndexCostPerTask field. Output left unchanged.")
+        sys.exit(1)
+    if not any(
+        not m["deprecated"] and measurement_or_none(m["intelligence_index"]) is not None
+        and m["cost_per_task"] is not None and m["cost_per_task"] > 0
+        and m["e2e_response_time_s"] is not None
+        for m in models_with_price
+    ):
+        print("Error: no chart-eligible response times; check timeToFirstAnswerToken "
+              "and outputSpeed. The response-time filter would stop working. "
+              "Output left unchanged.")
         sys.exit(1)
     if not any("terminalBench40" in m for m in indexes.values()):
         print("Error: no Terminal-Bench v4.0 scores; check the models leaderboard "
