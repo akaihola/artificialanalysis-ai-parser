@@ -24,6 +24,10 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 ## In Progress
 
+- [~] [7] Restore the November 14 daily refresh after provider rows lost model
+      identities.
+      <!-- hai:{"id":"simple-24650dd4-1d8d-4022-832a-708466a40b29","createdAt":"2026-11-14T11:41:43.707Z","updatedAt":"2026-11-14T11:41:43.707Z"} -->
+
 ## Completed / Accepted
 
 - [x] [6] Restore daily model refresh after Artificial Analysis changed its data
@@ -72,7 +76,9 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 [6]: docs/tasks/6-restore-daily-model-refresh-after-artificial-analysis-changed-its-data.md
 
-<!-- hai:reserved-numbers:1,2,3,4,5,6 -->
+<!-- hai:reserved-numbers:1,2,3,4,5,6,7 -->
+
+[7]: docs/tasks/7-restore-the-november-14-daily-refresh-after-provider-rows-lost-model-i.md
 
 ## Rules
 
