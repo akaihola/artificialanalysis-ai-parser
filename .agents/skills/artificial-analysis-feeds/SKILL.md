@@ -36,3 +36,13 @@ Use `--out` with a temporary destination for live parser checks. The
 covers distinct efforts and deprecated models; tests also preserve the old output
 when identity matching fails. Normalized downloads remain replayable through
 the parser's existing offline inputs. Reusing a catalog is limited to one process.
+
+## GitHub refresh access
+
+Verified 2026-11-14: the installed CLI credential could push repository content
+but `gh workflow run update-models.yml` returned HTTP 403, and the GitHub app's
+job-rerun tool also returned HTTP 403. The T3 Default browser profile was signed
+out. Do not assume content-write access grants Actions-write access. The refresh
+workflow runs on a daily schedule or manual dispatch; an ordinary push only
+starts GitHub Pages deployment. A local parser run followed by an authorized
+data commit can update the chart while awaiting the next automatic refresh.
