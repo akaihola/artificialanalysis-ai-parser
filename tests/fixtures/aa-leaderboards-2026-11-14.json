@@ -1,0 +1,273 @@
+{
+  "source": "Artificial Analysis provider/model leaderboard and /models catalog manifests, fetched 2026-11-14 UTC. Only fields used by this regression are retained.",
+  "rows": [
+    {
+      "id": "c9cbf21c-31b5-4147-a69f-a8a1d617b258",
+      "label": "GLM-4.5V (non-reasoning)",
+      "host": {
+        "name": "Novita",
+        "slug": "novita"
+      },
+      "model": {
+        "release": {
+          "slug": "glm-4-5v"
+        },
+        "deprecated": true,
+        "reasoningModel": false,
+        "intelligenceIndex": null,
+        "creator": {
+          "name": "Z AI",
+          "logo": "zai.svg"
+        }
+      },
+      "pricing": {
+        "priceClass": "medium",
+        "price1mInputTokens": 0.6,
+        "price1mOutputTokens": 1.8,
+        "cacheHitPrice": 0.11,
+        "cacheWritePrice": null
+      },
+      "performance": {
+        "outputSpeed": 43.998365103849096,
+        "timeToFirstToken": 8.105958344111198,
+        "timeToFirstAnswerToken": 8.105958344111198,
+        "endpointErrorRate": 0
+      }
+    },
+    {
+      "id": "52a3d870-3069-4a41-9c6c-19cdac84fab1",
+      "label": "GPT-6 Astra (xhigh)",
+      "host": {
+        "name": "OpenAI",
+        "slug": "openai"
+      },
+      "model": {
+        "release": {
+          "slug": "gpt-6-astra"
+        },
+        "deprecated": false,
+        "reasoningModel": true,
+        "intelligenceIndex": 55.3057468569681,
+        "creator": {
+          "name": "OpenAI",
+          "logo": "openai.svg"
+        }
+      },
+      "pricing": {
+        "costPerTask": 3.6589264906126227,
+        "priceClass": "high",
+        "price1mInputTokens": 10,
+        "price1mOutputTokens": 50,
+        "cacheHitPrice": 1,
+        "cacheWritePrice": 12.5
+      },
+      "performance": {
+        "outputSpeed": 37.5243530842237,
+        "timeToFirstToken": 113.1297822884543,
+        "timeToFirstAnswerToken": 113.1297822884543,
+        "endpointErrorRate": 0.0380952380952381,
+        "intelligenceIndexTimePerTask": 712.171067557583
+      }
+    },
+    {
+      "id": "74624b8d-abbb-471a-a535-b9dcfe4d41e9",
+      "label": "GPT-6 Astra (max)",
+      "host": {
+        "name": "OpenAI",
+        "slug": "openai"
+      },
+      "model": {
+        "release": {
+          "slug": "gpt-6-astra"
+        },
+        "deprecated": false,
+        "reasoningModel": true,
+        "intelligenceIndex": 56.8538559596797,
+        "creator": {
+          "name": "OpenAI",
+          "logo": "openai.svg"
+        }
+      },
+      "pricing": {
+        "costPerTask": 6.244666943602518,
+        "priceClass": "high",
+        "price1mInputTokens": 10,
+        "price1mOutputTokens": 50,
+        "cacheHitPrice": 1,
+        "cacheWritePrice": 12.5
+      },
+      "performance": {
+        "outputSpeed": 36.41419969584626,
+        "timeToFirstToken": 251.67273015029127,
+        "timeToFirstAnswerToken": 251.67273015029127,
+        "endpointErrorRate": 0.07317073170731707,
+        "intelligenceIndexTimePerTask": 1427.2783532399321
+      }
+    },
+    {
+      "id": "14f1b6ff-6134-4e96-bab7-7ad1324cfab3",
+      "label": "GPT-6 Astra (max)",
+      "host": {
+        "name": "Microsoft Azure",
+        "slug": "azure"
+      },
+      "model": {
+        "release": {
+          "slug": "gpt-6-astra"
+        },
+        "deprecated": false,
+        "reasoningModel": true,
+        "intelligenceIndex": 56.8538559596797,
+        "creator": {
+          "name": "OpenAI",
+          "logo": "openai.svg"
+        }
+      },
+      "pricing": {
+        "costPerTask": 6.4585669043824065,
+        "priceClass": "high",
+        "price1mInputTokens": 10,
+        "price1mOutputTokens": 50,
+        "cacheHitPrice": 1,
+        "cacheWritePrice": 12.5
+      },
+      "performance": {
+        "outputSpeed": 40.097164364640825,
+        "timeToFirstToken": 239.0230319005219,
+        "timeToFirstAnswerToken": 239.0230319005219,
+        "endpointErrorRate": 0.011494252873563218,
+        "intelligenceIndexTimePerTask": 1296.181408335932
+      }
+    }
+  ],
+  "models": [
+    {
+      "id": "0081ab31-d10a-44a0-a10d-eee5533fec65",
+      "release": {
+        "slug": "glm-4-5v",
+        "name": "GLM-4.5V"
+      },
+      "name": "GLM-4.5V (Non-reasoning)",
+      "shortName": "GLM-4.5V (non-reasoning)",
+      "suffix": "Non-reasoning",
+      "deprecated": true,
+      "intelligenceIndex": null,
+      "outputSpeed": 43.998365103849096,
+      "timeToFirstToken": 8.105958344111198,
+      "timeToFirstAnswerToken": 8.105958344111198,
+      "scores": {
+        "aime-2025": 0.153333333333333
+      }
+    },
+    {
+      "id": "1f541ef3-913f-4eb2-9d07-0e93c7a9a5e3",
+      "release": {
+        "slug": "gpt-6-astra",
+        "name": "GPT-6 Astra"
+      },
+      "name": "GPT-6 Astra (Xhigh)",
+      "shortName": "GPT-6 Astra (xhigh)",
+      "suffix": "Xhigh",
+      "deprecated": false,
+      "intelligenceIndex": 55.3057468569681,
+      "intelligenceIndexCostPerTask": 3.6589264906126227,
+      "outputSpeed": 37.5243530842237,
+      "timeToFirstToken": 113.1297822884543,
+      "timeToFirstAnswerToken": 113.1297822884543,
+      "scores": {
+        "terminalbench-4-0": 0.595959595959596,
+        "scicode": 0.556712962962963
+      }
+    },
+    {
+      "id": "2f339a97-9a0d-499a-9cb5-e0db665bfa25",
+      "release": {
+        "slug": "gpt-6-astra",
+        "name": "GPT-6 Astra"
+      },
+      "name": "GPT-6 Astra (Max)",
+      "shortName": "GPT-6 Astra (max)",
+      "suffix": "Max",
+      "deprecated": false,
+      "intelligenceIndex": 56.8538559596797,
+      "intelligenceIndexCostPerTask": 6.244666943602518,
+      "outputSpeed": 36.41419969584626,
+      "timeToFirstToken": 251.67273015029127,
+      "timeToFirstAnswerToken": 251.67273015029127,
+      "scores": {
+        "terminalbench-4-0": 0.590909090909091,
+        "scicode": 0.564814814814815
+      }
+    }
+  ],
+  "catalog": [
+    {
+      "id": "0081ab31-d10a-44a0-a10d-eee5533fec65",
+      "slug": "glm-4-5v",
+      "name": "GLM-4.5V (Non-reasoning)",
+      "shortName": "GLM-4.5V (non-reasoning)",
+      "release": {
+        "slug": "glm-4-5v",
+        "name": "GLM-4.5V",
+        "deprecatedTo": "glm-4-6v"
+      }
+    },
+    {
+      "id": "1f541ef3-913f-4eb2-9d07-0e93c7a9a5e3",
+      "slug": "gpt-6-astra-xhigh",
+      "name": "GPT-6 Astra (Xhigh)",
+      "shortName": "GPT-6 Astra (xhigh)",
+      "release": {
+        "slug": "gpt-6-astra",
+        "name": "GPT-6 Astra",
+        "deprecatedTo": null
+      }
+    },
+    {
+      "id": "2f339a97-9a0d-499a-9cb5-e0db665bfa25",
+      "slug": "gpt-6-astra",
+      "name": "GPT-6 Astra (Max)",
+      "shortName": "GPT-6 Astra (max)",
+      "release": {
+        "slug": "gpt-6-astra",
+        "name": "GPT-6 Astra",
+        "deprecatedTo": null
+      }
+    }
+  ],
+  "releases": [
+    {
+      "slug": "gpt-6-astra",
+      "name": "GPT-6 Astra",
+      "deprecated": false,
+      "releaseDate": "2026-09-03",
+      "modelNames": [
+        "GPT-6 Astra (Max)",
+        "GPT-6 Astra (Xhigh)",
+        "GPT-6 Astra (High)",
+        "GPT-6 Astra (Medium)",
+        "GPT-6 Astra (Low)"
+      ],
+      "creator": {
+        "slug": "openai",
+        "name": "OpenAI",
+        "logo": "/img/logos/openai.svg"
+      }
+    },
+    {
+      "slug": "glm-4-5v",
+      "name": "GLM-4.5V",
+      "deprecated": true,
+      "releaseDate": "2025-08-11",
+      "modelNames": [
+        "GLM-4.5V (Non-reasoning)",
+        "GLM-4.5V (Reasoning)"
+      ],
+      "creator": {
+        "slug": "zai",
+        "name": "Z AI",
+        "logo": "/img/logos/zai.svg"
+      }
+    }
+  ]
+}

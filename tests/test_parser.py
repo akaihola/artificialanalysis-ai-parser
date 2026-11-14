@@ -64,6 +64,89 @@ class Download(io.BytesIO):
 
 
 class ParserTests(unittest.TestCase):
+    def setUp(self):
+        parser.fetch_model_catalog.cache_clear()
+
+    def test_slugless_leaderboards_preserve_variants(self):
+        fixture = json.loads(
+            (FIXTURES / "aa-leaderboards-2026-11-14.json").read_text()
+        )
+        pages = {
+            parser.RSC_URL: stream("initialRows", []) + stream("manifest", {
+                "path": "/data/providers.txt"}),
+            parser.MODELS_RSC_URL: stream("releases", fixture["releases"]) + stream(
+                "manifest", {"path": "/data/scores.txt"}),
+            "https://artificialanalysis.ai/models": stream("manifest", {
+                "path": "/data/endpoints.txt"}) + stream("manifest", {
+                    "path": "/data/catalog.txt"}),
+            "https://artificialanalysis.ai/data/providers.txt": json.dumps(fixture["rows"]).encode(),
+            "https://artificialanalysis.ai/data/scores.txt": json.dumps(fixture["models"]).encode(),
+            # The model index has two manifests; only one holds the model catalog.
+            "https://artificialanalysis.ai/data/endpoints.txt": b'[{"id":"endpoint"}]',
+            "https://artificialanalysis.ai/data/catalog.txt": json.dumps({
+                "models": fixture["catalog"]}).encode(),
+        }
+        with patch.object(parser, "urlopen", side_effect=lambda request, **_: Download(
+            pages[request.full_url]
+        )) as fetch:
+            rows_raw = parser.fetch_rsc()
+            models_raw = parser.fetch_rsc(parser.MODELS_RSC_URL)
+        self.assertEqual(sum(call.args[0].full_url == "https://artificialanalysis.ai/models"
+                             for call in fetch.call_args_list), 1)
+        self.assertEqual(len(parser.deduplicate_models(parser.extract_rows(rows_raw))), 3)
+        with tempfile.TemporaryDirectory() as directory:
+            data = self.run_main(directory, rows_raw, models_raw, minimal=True,
+                                 livebench_slug="gpt-6-astra")
+        by_slug = {m["slug"]: m for m in data}
+        self.assertEqual(set(by_slug), {"glm-4-5v", "gpt-6-astra", "gpt-6-astra-xhigh"})
+        for source in fixture["models"]:
+            slug = next(m["slug"] for m in fixture["catalog"] if m["id"] == source["id"])
+            model = by_slug[slug]
+            self.assertEqual(model["family"], source["release"]["slug"])
+            self.assertEqual(model["deprecated"], source["deprecated"])
+            self.assertEqual(model["cost_per_task"], source.get("intelligenceIndexCostPerTask"))
+            self.assertEqual(model["output_tokens_per_second"], source["outputSpeed"])
+        self.assertEqual(by_slug["gpt-6-astra"]["provider"], "OpenAI")
+        self.assertEqual(by_slug["gpt-6-astra"]["effort"], "max")
+        self.assertEqual(by_slug["gpt-6-astra-xhigh"]["effort"], "xhigh")
+        self.assertIsNotNone(by_slug["gpt-6-astra"]["livebench_coding"])
+        self.assertIsNone(by_slug["gpt-6-astra-xhigh"]["livebench_coding"])
+
+    def test_catalog_mismatch_preserves_output(self):
+        fixture = json.loads(
+            (FIXTURES / "aa-leaderboards-2026-11-14.json").read_text()
+        )
+        duplicate = copy.deepcopy(fixture["catalog"][-1])
+        duplicate.update(id="other-id", slug="other-variant")
+        catalogs = [[], fixture["catalog"] + [duplicate]]
+        for catalog in catalogs:
+            with self.subTest(catalog_size=len(catalog)), tempfile.TemporaryDirectory() as directory:
+                output = Path(directory) / "output.json"
+                output.write_bytes(b"previous dataset\n")
+                page = stream("manifest", {"path": "/data/providers.txt"})
+                responses = [Download(page), Download(json.dumps(fixture["rows"]).encode())]
+                with patch("sys.argv", ["parser", "--out", str(output)]), patch.object(
+                    parser, "urlopen", side_effect=responses
+                ), patch.object(parser, "fetch_model_catalog", return_value=catalog), \
+                        contextlib.redirect_stdout(io.StringIO()), self.assertRaises(SystemExit):
+                    parser.main()
+                self.assertEqual(output.read_bytes(), b"previous dataset\n")
+
+    def test_catalog_host_suffix_and_unknown_effort(self):
+        catalog = [{"id": "test-id", "slug": "test", "name": "Test model",
+                    "release": {"slug": "test-family"}}]
+        with patch.object(parser, "fetch_model_catalog", return_value=catalog):
+            row = {"label": "Test model (FP8)",
+                   "model": {"release": {"slug": "test-family"}}}
+            parser.restore_model_slugs([row], "rows", 60)
+            self.assertEqual(row["model"]["slug"], "test")
+            row["model"].pop("slug")
+            row["label"] = "Test model (Xhigh)"
+            with self.assertRaisesRegex(ValueError, "no unique catalog model"):
+                parser.restore_model_slugs([row], "rows", 60)
+            with self.assertRaisesRegex(ValueError, "model ID absent from catalog"):
+                parser.restore_model_slugs([{"id": "unknown-id"}], "models", 60)
+
     def test_response_time_estimate_includes_thinking(self):
         raw = scores(outputSpeed=100, timeToFirstToken=1,
                      timeToFirstAnswerToken=90, intelligenceIndexTimePerTask=999,

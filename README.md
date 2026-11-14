@@ -23,12 +23,18 @@ including thinking, plus `500 / outputSpeed`. Estimates are marked `≈` in the
 chart details and table. Historical reported totals retain precedence. Models
 missing either timing component remain unknown and pass the chart's time filter.
 
+On November 14, the leaderboard feeds stopped including model variant slugs.
+The parser now obtains them from the public [model catalog]. It joins model
+scores by model ID and provider rows by the longest matching model name within
+the same release, preserving separate reasoning efforts. Unknown or ambiguous
+matches stop the refresh and preserve the previous output.
+
 The Python parser in this project:
 
 - **Extracts** complete provider and model arrays through the page manifests,
   while retaining support for earlier RSC dumps
 - **Deduplicates** ~1,100 host-model pairs down to ~470 unique models. Endpoints with both token prices known and at least one positive price rank first. Among those, it prefers the model creator's endpoint, then the lowest cost per task. The chosen endpoint supplies the provider and prices
-- **Joins** model-level data from the models leaderboard: benchmark scores, cost per task and performance (one value per model variant), plus the family, lab and release date from the site navigation in the same stream
+- **Joins** model-level data from the models leaderboard: benchmark scores, cost per task and performance (one value per model variant), plus the family, lab and release date from the release metadata in the same stream
 - **Cleans** the output to only essential fields (pricing, IQ, speed, cost per task, response time, context window)
 - **Outputs** `models.json` — about 450 models with pricing, ready for downstream use
 
@@ -302,3 +308,4 @@ GPL-3.0 — Copyright (C) 2026 Anton Maurer
 [LiveBench score CSV]: https://livebench.ai/v1/table_2026_06_25.csv
 [category map]: https://livebench.ai/v1/categories_2026_06_25.json
 [the parser dependencies]: requirements.txt
+[model catalog]: https://artificialanalysis.ai/models

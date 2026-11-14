@@ -22,6 +22,7 @@ import re
 import sys
 import zlib
 from datetime import datetime, timezone
+from functools import cache
 from urllib.error import URLError
 from urllib.parse import urlsplit
 from urllib.request import Request, urlopen
@@ -183,6 +184,91 @@ def parse_livebench(raw, categories, provenance):
     return indexes
 
 
+def fetch_manifest(manifest, timeout):
+    """Download and decode one public page-data manifest."""
+    if not isinstance(manifest, dict):
+        raise TypeError("invalid leaderboard manifest")
+    path = manifest.get("path")
+    if not isinstance(path, str) or not re.fullmatch(r"/data/[\w-]+\.txt", path):
+        raise ValueError("invalid leaderboard manifest path")
+    request = Request("https://artificialanalysis.ai" + path,
+                      headers={"User-Agent": RSC_HEADERS["user-agent"]})
+    with urlopen(request, timeout=timeout) as response:
+        data = response.read()
+    if manifest.get("key"):
+        key = bytes.fromhex(manifest["key"])
+        nonce = hashlib.sha256(key).digest()[:12]
+        data = gzip.decompress(AESGCM(key).decrypt(nonce, data, None))
+    return json.loads(data)
+
+
+@cache
+def fetch_model_catalog(timeout=60):
+    """Read canonical variant IDs, slugs and names once per refresh."""
+    request = Request("https://artificialanalysis.ai/models", headers=RSC_HEADERS)
+    with urlopen(request, timeout=timeout) as response:
+        text = response.read().decode("utf-8")
+    for match in re.finditer(r'"manifest"\s*:\s*', text):
+        manifest, _ = json.JSONDecoder().raw_decode(text, match.end())
+        data = fetch_manifest(manifest, timeout)
+        if not isinstance(data, dict) or "models" not in data:
+            continue  # The other manifest contains endpoint measurements.
+        models = data["models"]
+        if not isinstance(models, list) or not models or any(
+            not isinstance(m, dict) or not text_or_none(m.get("id"))
+            or not text_or_none(m.get("slug"))
+            or not text_or_none(dict_or_empty(m.get("release")).get("slug"))
+            or not text_or_none(m.get("name")) for m in models
+        ):
+            raise ValueError("invalid model catalog")
+        if len({m["id"] for m in models}) != len(models):
+            raise ValueError("duplicate model catalog IDs")
+        return models
+    raise ValueError("model catalog manifest not found")
+
+
+def restore_model_slugs(values, array_key, timeout):
+    """Restore missing variant slugs without merging reasoning efforts."""
+    providers = array_key == "rows"
+    if all(text_or_none((dict_or_empty(v.get("model")) if providers else v).get("slug"))
+           for v in values):
+        return
+    catalog = fetch_model_catalog(timeout)
+    by_id = {m["id"]: m for m in catalog}
+    by_release = {}
+    for m in catalog:
+        by_release.setdefault(m["release"]["slug"], []).append(m)
+    for value in values:
+        model = dict_or_empty(value.get("model")) if providers else value
+        if text_or_none(model.get("slug")):
+            continue
+        if providers:
+            # Host labels may append "(FP8)", "(Fast)" or a region. Match the
+            # longest complete canonical name within this exact release only.
+            release = dict_or_empty(model.get("release")).get("slug")
+            label = (text_or_none(value.get("label")) or "").casefold()
+            reasoning = model.get("reasoningModel")
+            effort = parse_effort(label, reasoning)
+            matches = []
+            for candidate in by_release.get(release, []):
+                for name in (candidate["name"], text_or_none(candidate.get("shortName"))):
+                    if not name or parse_effort(name, reasoning) != effort:
+                        continue
+                    if label == name.casefold() or label.startswith(name.casefold() + " "):
+                        matches.append((len(name), candidate["slug"]))
+            longest = max((length for length, _ in matches), default=0)
+            slugs = {slug for length, slug in matches if length == longest}
+            if len(slugs) != 1:
+                raise ValueError(f"no unique catalog model for provider label: {label}")
+            model["slug"] = slugs.pop()
+        else:
+            canonical = by_id.get(model.get("id"))
+            if canonical is None:
+                raise ValueError(f"model ID absent from catalog: {model.get('id')}")
+            model["slug"] = canonical["slug"]
+            model["releaseSlug"] = canonical["release"]["slug"]
+
+
 def fetch_rsc(url=RSC_URL, timeout=60):
     """Download RSC plus its complete leaderboard, including deprecated models.
 
@@ -203,26 +289,14 @@ def fetch_rsc(url=RSC_URL, timeout=60):
         match = re.search(r'"manifest"\s*:\s*', text)
         if match:
             manifest, _ = json.JSONDecoder().raw_decode(text, match.end())
-            if not isinstance(manifest, dict):
-                raise ValueError("invalid leaderboard manifest")
-            path = manifest.get("path")
-            if not isinstance(path, str) or not re.fullmatch(r"/data/[\w-]+\.txt", path):
-                raise ValueError("invalid leaderboard manifest path")
-            data_url = "https://artificialanalysis.ai" + path
-            request = Request(data_url, headers={"User-Agent": RSC_HEADERS["user-agent"]})
-            with urlopen(request, timeout=timeout) as response:
-                data = response.read()
-            if manifest.get("key"):
-                key = bytes.fromhex(manifest["key"])
-                nonce = hashlib.sha256(key).digest()[:12]
-                data = gzip.decompress(AESGCM(key).decrypt(nonce, data, None))
-            values = json.loads(data)
+            values = fetch_manifest(manifest, timeout)
             if not isinstance(values, list) or not values or any(
                 not isinstance(value, dict) for value in values
             ):
                 raise ValueError("leaderboard manifest must contain a nonempty object array")
             array_key = ("rows" if urlsplit(url).path == "/leaderboards/providers"
                          else "models")
+            restore_model_slugs(values, array_key, timeout)
             array_json = json.dumps({array_key: values}, separators=(",", ":"))
             raw += b"\nparser:" + array_json.encode()
             print(f"Downloaded full {array_key}: {len(values):,} entries")

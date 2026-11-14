@@ -26,7 +26,7 @@ Rules for TASKS.md usage are at the bottom of the file.
 
 - [~] [7] Restore the November 14 daily refresh after provider rows lost model
       identities.
-      <!-- hai:{"id":"simple-24650dd4-1d8d-4022-832a-708466a40b29","createdAt":"2026-11-14T11:41:43.707Z","updatedAt":"2026-11-14T11:41:43.707Z"} -->
+      <!-- hai:{"id":"simple-24650dd4-1d8d-4022-832a-708466a40b29","createdAt":"2026-11-14T11:41:43.707Z","updatedAt":"2026-11-14T11:50:33.289Z"} -->
 
 ## Completed / Accepted
 
