@@ -2,4 +2,4 @@
 
 Issues are tracked in `TASKS.md`.
 
-For parser feed changes, read [Artificial Analysis feeds](.agents/skills/artificial-analysis-feeds/SKILL.md?f).
+For parser feed changes, read [Artificial Analysis feeds](.agents/skills/artificial-analysis-feeds/SKILL.md).

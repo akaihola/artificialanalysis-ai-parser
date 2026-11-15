@@ -32,7 +32,7 @@ Verified 2026-11-14 against the public site and a live parser refresh:
 
 Run `uv run --with-requirements requirements.txt python -m unittest tests.test_parser -v`.
 Use `--out` with a temporary destination for live parser checks. The
-[November 14 fixture](../../../tests/fixtures/aa-leaderboards-2026-11-14.json?f)
+[November 14 fixture](../../../tests/fixtures/aa-leaderboards-2026-11-14.json)
 covers distinct efforts and deprecated models; tests also preserve the old output
 when identity matching fails. Normalized downloads remain replayable through
 the parser's existing offline inputs. Reusing a catalog is limited to one process.
@@ -46,3 +46,8 @@ out. Do not assume content-write access grants Actions-write access. The refresh
 workflow runs on a daily schedule or manual dispatch; an ordinary push only
 starts GitHub Pages deployment. A local parser run followed by an authorized
 data commit can update the chart while awaiting the next automatic refresh.
+
+Verified 2026-11-15: the normal scheduled refresh passed all 32 tests, generated
+445 priced models, pushed data commit `6d3613c` and triggered a successful Pages
+deployment. The public models.json bytes matched that commit exactly. Manual
+dispatch access was not needed for the scheduled run.

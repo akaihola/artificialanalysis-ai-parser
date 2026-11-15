@@ -1,46 +1,44 @@
-Antti’s daily chart-data refresh stopped because Artificial Analysis removed model variant slugs from both leaderboard feeds. The prepared parser repair restores those identities from the public model catalog, keeps reasoning efforts separate, and preserves the previous output when a match is missing or ambiguous. The repair and freshly generated chart data are published on GitHub. Verification of the next automatic GitHub refresh remains open.
+Antti’s daily chart-data refresh failed because Artificial Analysis removed model variant slugs from its leaderboard feeds. The parser now restores canonical identities from the public model catalog while keeping reasoning efforts separate. The repaired automatic refresh and GitHub Pages deployment both succeeded on November 15, and the public chart data exactly matches the generated commit.
 
-Owner: Codex in [the originating T3 thread]. Antti authorized publication and settlement when everything is done on 2026-11-14. No user action is needed now. A daily T3 check at 15:00 Europe/Helsinki is bound to that thread; its first run is 2026-11-15 13:00 UTC (15:00 Helsinki). Codex will inspect the next scheduled GitHub refresh, record completion and the conditional acceptance only after success, disable the check and request thread settlement. This task stays In Progress until that GitHub refresh succeeds. If no usable run appears by the November 17 check, stop the timer and give Antti the exact workflow UI steps.
+The work is complete. Antti authorized publication and settlement when everything was done on November 14; that condition is now satisfied. Codex records the conditional acceptance, stops the temporary verification timer and requests settlement of the originating conversation. The normal daily GitHub refresh remains enabled. Unrelated local commits in the main checkout were not pushed.
 
-## Verification on 2026-11-14
+## Automatic verification on 2026-11-15
 
-The new regression test first reproduced the failure: provider deduplication returned zero models instead of three distinct variants. After the repair, all 32 parser tests passed. They cover separate max/xhigh variants, deprecated models, host label suffixes, and preservation of the old output after unknown or ambiguous identity matches.
-
-A live refresh then downloaded 1,165 provider rows and 741 model records. It produced 445 priced models with 395 estimated response times. The repository’s published data was not changed by this check. Its existing 65 unreviewed LiveBench identities remain excluded; this repair does not broaden benchmark identity matching.
+The [successful scheduled refresh] started at 10:52:30 UTC. Its logs show checkout of master at `49642df11e425e8bf562001ab3068ae625314f5d`, which contains parser repair `46dacfa`. GitHub ran all 32 parser tests, regenerated the data and pushed `6d3613c2761df8e1c23733beea9ffe2937c051a5` to master.
 
 ```text
-Ran 32 tests in 0.053s
+Ran 32 tests in 0.073s
 OK
 Deduplicated to 456 unique models
+SciCode scores for 253 models from the models leaderboard
 Models with pricing: 445
 Models with response times: 395 (395 estimated)
+Saved 445 models to models.json (443,925 bytes)
+[master 6d3613c] chore: update models.json
+49642df..6d3613c  HEAD -> master
 ```
 
-The name-based provider joins also agreed with all 999 authoritative endpoint-to-model mappings available in the model index’s comparison payload. The other 166 provider rows had no performance measurements. Current release metadata still supplies family names, creators and release dates.
+The [corresponding Pages deployment] started at 10:52:46 UTC and completed successfully at the generated commit. Codex fetched the [public model data] on November 15 and compared it with that commit’s file: the bytes match exactly, with SHA-256 `34db737ff70139def3154806bab39f5c299d5a4b0075ce49321c5a520e4a8416`. It contains 445 priced models and 395 response-time estimates. The [live chart] uses this data.
 
-Ruff reports the same two pre-existing warnings before and after the change: a non-executable script with a shebang and use of timezone.utc. No new Ruff warnings were introduced. The project-local feed skill passes the skill validator and records the verified endpoints, identity rules and limitations.
+## Repair and earlier checks
 
-Review the [parser repair], [regression tests] and [feed skill]. Saved evidence includes the [test output], [live refresh output] and [generated model data]. The original [failed GitHub job] remains historical evidence; the repaired workflow has not yet run on GitHub.
+The [parser repair] obtains canonical model slugs from the public model catalog. Model scores join by model ID; provider rows match the longest complete canonical name within the exact release and reasoning effort. Missing or ambiguous matches stop the refresh and preserve the old output.
 
-[parser repair]: ../../artificialanalysis.ai-parser.py?f
-[regression tests]: ../../tests/test_parser.py?f
-[feed skill]: ../../.agents/skills/artificial-analysis-feeds/SKILL.md?f
-[test output]: http://tinni/.local/state/artificialanalysis-ai-parser/2026-11-14-refresh/aa-nov14-tests.log?f
-[live refresh output]: http://tinni/.local/state/artificialanalysis-ai-parser/2026-11-14-refresh/aa-nov14-live-refresh.log?f
-[generated model data]: http://tinni/.local/state/artificialanalysis-ai-parser/2026-11-14-refresh/aa-nov14-fixed-models.json?f
-[failed GitHub job]: https://github.com/akaihola/artificialanalysis-ai-parser/actions/runs/43585184212/job/132418034382#step:5:1
+The [regression tests] first reproduced the failure, returning zero models instead of three variants. They now cover separate max/xhigh variants, deprecated models, host-label suffixes and preservation of the previous output after unknown or ambiguous matches. The [November 14 fixture] retains the relevant real feed fields. Live name matches also agreed with all 999 authoritative endpoint-to-model mappings available for comparison; the other 166 endpoints had no performance measurements.
 
-## Publication on 2026-11-14
+Repair commit `46dacfa` and manually generated data commit `bd8214e` were published on November 14. Manual workflow dispatch and job rerun were denied with HTTP 403, so the verification waited for the existing daily schedule. No credentials or workflow triggers were changed. That access limit did not prevent the automatic refresh verified above.
 
-Repair commit `46dacfa` was pushed to GitHub master. A fresh live parser run then saved 445 priced models with 395 response-time estimates, and data commit `bd8214e` was also pushed to master. The published data does not depend on waiting for another scheduled refresh.
+The [feed maintenance skill] records the verified endpoints, identity rules and access limits. Ruff reports the same two pre-existing warnings before and after the repair: a non-executable script with a shebang and use of timezone.utc. The existing 65 unreviewed LiveBench identities remain excluded; this repair does not broaden benchmark identity matching.
 
-Starting the workflow manually failed with HTTP 403: the CLI credential was denied workflow dispatch, and the connected GitHub app was denied rerunning the original job. The collaborative browser’s Default profile showed Sign in. No credentials or workflow triggers were changed. These are access limits, not evidence that the repaired parser failed.
+## Closeout
 
-The T3 check is `scheduled-task:command:mcp:9946c97c-e511-4f46-a80f-4fda61f6f9a1:schedule-task:aa-refresh-verification-20261114-93bd7af3`. It is enabled, bound to this thread and reports its next run as `2026-11-15T13:00:00.000Z`. Its prompt has an explicit stop after success or the November 17 deadline. No worktree is attached to this thread, and the repair branch is preserved in Git and the scheduled check recreates its temporary checkout if needed, following the ephemeral-worktree rule. The main repository checkout has unrelated unpublished commits; they were preserved and not pushed.
+The temporary T3 verification timer is disabled after successful verification. Completion and conditional acceptance are published in the task tracker before settlement. The independent verification checkout is removed after cleanliness and publication checks; its branch is preserved. No main checkout or unrelated worktree is removed.
 
-[the originating T3 thread]: t3-thread://v1/93bd7af3-15f0-49ee-ad0e-e0f9c3fb4661
-
-The [GitHub Pages deployment] for `bd8214e` succeeded. Fetching the [published model data] returned exactly the committed bytes: 445 models, including 395 with response-time estimates. The parser repair and updated chart data are live. Only independent verification of the next daily GitHub refresh remains. The temporary repair checkout can be removed after publication bookkeeping; its branch and immutable evidence are preserved.
-
-[GitHub Pages deployment]: https://github.com/akaihola/artificialanalysis-ai-parser/actions/runs/43610221677
-[published model data]: https://akaihola.github.io/artificialanalysis-ai-parser/models.json
+[successful scheduled refresh]: https://github.com/akaihola/artificialanalysis-ai-parser/actions/runs/43706171470
+[corresponding Pages deployment]: https://github.com/akaihola/artificialanalysis-ai-parser/actions/runs/43706190521
+[public model data]: https://akaihola.github.io/artificialanalysis-ai-parser/models.json
+[live chart]: https://akaihola.github.io/artificialanalysis-ai-parser/intelligence-vs-cost.html
+[parser repair]: ../../artificialanalysis.ai-parser.py
+[regression tests]: ../../tests/test_parser.py
+[November 14 fixture]: ../../tests/fixtures/aa-leaderboards-2026-11-14.json
+[feed maintenance skill]: ../../.agents/skills/artificial-analysis-feeds/SKILL.md
