@@ -7,3 +7,12 @@ claude-fable-5-1-max-effort,90.141,82.609,68.182,60.0,70.0
 gemini-3.8-flash-high,73.239,71.739,72.727,40.0,50.0
 gpt-6-astra-max,80.282,80.435,63.636,43.333,65.0
 deepseek-v4.1-flash-max,77.465,82.609,81.818,60.0,90.0
+grok-4.7-xhigh,76.056,78.261,63.636,43.333,55.0
+claude-opus-5-5-max-effort,91.549,86.957,81.818,63.333,70.0
+claude-opus-5-5-xhigh-effort,91.549,86.957,72.727,53.333,70.0
+gpt-6-luna-max,77.465,80.435,63.636,40.0,50.0
+claude-sonnet-5-5-max-effort,95.775,86.957,77.273,56.667,35.0
+claude-sonnet-5-5-xhigh-effort,92.958,84.783,36.364,46.667,35.0
+mistral-large-4-high,76.056,78.261,68.182,43.333,60.0
+claude-haiku-5-5-xhigh-effort,78.873,73.913,59.091,40.0,55.0
+claude-haiku-5-5-max-effort,77.465,78.261,68.182,43.333,60.0

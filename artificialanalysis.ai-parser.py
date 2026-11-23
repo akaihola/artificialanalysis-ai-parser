@@ -78,6 +78,17 @@ LIVEBENCH_MODELS = {
     "gpt-5.6-luna-max": ("gpt-5-6-luna", "max", None),
     "gemini-3.8-flash-high": ("gemini-3-8-flash", "high", None),
     "deepseek-v4.1-flash-max": ("deepseek-v4-1-flash", "max", "2026-09-10"),
+    # Added 2026-11-23 after AA deprecated every model above. Each LiveBench ID
+    # names the same model and effort as AA's slug; unspecified efforts stay out.
+    "claude-opus-5-5-max-effort": ("claude-opus-5-5", "max", None),
+    "claude-opus-5-5-xhigh-effort": ("claude-opus-5-5-xhigh", "xhigh", None),
+    "claude-sonnet-5-5-max-effort": ("claude-sonnet-5-5", "max", None),
+    "claude-sonnet-5-5-xhigh-effort": ("claude-sonnet-5-5-xhigh", "xhigh", None),
+    "claude-haiku-5-5-max-effort": ("claude-haiku-5-5", "max", None),
+    "claude-haiku-5-5-xhigh-effort": ("claude-haiku-5-5-xhigh", "xhigh", None),
+    "gpt-6-luna-max": ("gpt-6-luna", "max", None),
+    "grok-4.7-xhigh": ("grok-4-7", "xhigh", None),
+    "mistral-large-4-high": ("mistral-large-4", "high", None),
 }
 
 
